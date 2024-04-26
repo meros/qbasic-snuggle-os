@@ -84,7 +84,7 @@ Init
 
 NewWin "Alfa", 90, 90, 300, 70
 NewWin "Beta", 100, 100, 300, 70
-NewWin "Ceta", 110, 110, 300, 70
+NewWin "Welcome to the future", 120, 120, 300, 100
 refresh
 
 DO
