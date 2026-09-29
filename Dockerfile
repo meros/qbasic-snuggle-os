@@ -1,13 +1,17 @@
 FROM node:lts-alpine
-COPY qb11.zip .
-COPY SNUGGLE.BAS .
-COPY dosbox.conf .
-WORKDIR /
+WORKDIR /app
 RUN apk -U add zip
-RUN zip -ur qb11.zip SNUGGLE.BAS
-RUN mkdir -p .jsdos && mv dosbox.conf .jsdos/dosbox.conf && zip -ur qb11.zip .jsdos/dosbox.conf
-RUN npx create-dosbox snuggle qb11.zip
-WORKDIR /snuggle/
+COPY package.json ./
 RUN npm install
+COPY qb11.zip SNUGGLE.BAS dosbox.conf ./
+RUN zip -ur qb11.zip SNUGGLE.BAS \
+ && mkdir -p .jsdos && mv dosbox.conf .jsdos/dosbox.conf \
+ && zip -ur qb11.zip .jsdos/dosbox.conf
+RUN mkdir -p public \
+ && unzip -o qb11.zip -d public/ \
+ && rm qb11.zip \
+ && find node_modules/js-dos/dist/ -maxdepth 1 -type f -exec cp {} public/ \;
+COPY index.html public/index.html
+COPY server.js ./
 EXPOSE 8080
-CMD [ "npm", "start" ]
+CMD ["npm", "start"]

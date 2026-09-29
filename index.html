@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Snuggle OS</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; }
+    body { display: flex; align-items: center; justify-content: center; }
+    canvas { width: 640px; height: 480px; image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+  <canvas id="jsdos"></canvas>
+  <script src="js-dos.js"></script>
+  <script>
+    function fetchBuf(url) {
+      return fetch(url).then(function (r) { return r.arrayBuffer(); });
+    }
+    Promise.all([
+      fetchBuf("QBASIC.EXE"),
+      fetchBuf("SNUGGLE.BAS"),
+    ]).then(function (bufs) {
+      Dos(document.getElementById("jsdos")).ready(function (fs, main) {
+        fs.createFile("/QBASIC.EXE", bufs[0]);
+        fs.createFile("/SNUGGLE.BAS", bufs[1]);
+        main(["-c", "QBASIC.EXE /RUN SNUGGLE.BAS"]);
+      });
+    });
+  </script>
+</body>
+</html>

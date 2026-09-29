@@ -16,7 +16,10 @@ DECLARE SUB WinPutTop (who%)
 DECLARE FUNCTION CheckIfWinArea% (who%)
 DECLARE FUNCTION CheckWinArea% (who%)
 DECLARE SUB WinMakeHighest (num%)
-DECLARE SUB WinUnDrw (who%)
+DECLARE SUB RedrawRect (x1%, y1%, x2%, y2%)
+DECLARE SUB RedrawRectUnion (ox1%, oy1%, ox2%, oy2%, nx1%, ny1%, nx2%, ny2%)
+DECLARE SUB AddRect (x1%, y1%, x2%, y2%)
+DECLARE SUB SubtractRect (cx1%, cy1%, cx2%, cy2%)
 DECLARE SUB StartDrag (who%)
 DECLARE SUB mouse.getpos (x%, y%)
 DECLARE FUNCTION CheckIfTitle% (who%)
@@ -60,6 +63,15 @@ DIM SHARED WNumber AS INTEGER
 DIM SHARED WGData(WNMax, 6) AS INTEGER
 DIM SHARED WTData(WNMax) AS STRING
 DIM SHARED WOrder(WNMax) AS INTEGER
+DIM SHARED VRCount AS INTEGER
+DIM SHARED VRX(200) AS INTEGER
+DIM SHARED VRY(200) AS INTEGER
+DIM SHARED VRX2(200) AS INTEGER
+DIM SHARED VRY2(200) AS INTEGER
+DIM SHARED SubX1(200) AS INTEGER
+DIM SHARED SubY1(200) AS INTEGER
+DIM SHARED SubX2(200) AS INTEGER
+DIM SHARED SubY2(200) AS INTEGER
 DIM SHARED move AS STRING
 move = mouse.loadgcr("move")
 DIM SHARED pointer AS STRING
@@ -100,15 +112,17 @@ GetStats CW, crap$, wx, wy, ww, wh, wstate
                 CASE 1
                 CASE 2
                 mouse.hide
-                        WinUnDrw CW
+                        GetStats CW, crap$, ox1, oy1, ow, oh, os
                         IF WGData(CW, 5) <> 2 THEN WGData(CW, 5) = 2 ELSE WGData(CW, 5) = 1
-                        WinDrwMng CW
+                        GetStats CW, crap$, nx1, ny1, nw, nh, ns
+                        RedrawRectUnion ox1, oy1, ox1 + ow, oy1 + oh, nx1, ny1, nx1 + nw, ny1 + nh
                 mouse.show
                 CASE 3
                 mouse.hide
-                        WinUnDrw CW
+                        GetStats CW, crap$, ox1, oy1, ow, oh, os
                         IF WGData(CW, 5) <> 0 THEN WGData(CW, 5) = 0 ELSE WGData(CW, 5) = 1
-                        WinDrwMng CW
+                        GetStats CW, crap$, nx1, ny1, nw, nh, ns
+                        RedrawRectUnion ox1, oy1, ox1 + ow, oy1 + oh, nx1, ny1, nx1 + nw, ny1 + nh
                 mouse.show
                 CASE ELSE
                 END SELECT
@@ -925,11 +939,7 @@ END SUB
 SUB refresh
 mouse.hide
 CLS
-LINE (0, 0)-(640, 480), 4, BF
-FOR Cyc = WNumber TO 1 STEP -1
-CW = WOrder(Cyc)
-WinDrwMng CW
-NEXT
+RedrawRect 0, 0, 639, 479
 mouse.show
 END SUB
 
@@ -978,10 +988,11 @@ DO
         IF lx = x AND ly = y THEN
         ELSE
         mouse.hide
-        WinUnDrw (who)
+        GetStats who, crap$, sx, sy, sw, sh, sstate
                 WGData(who, 1) = wx + (x - ox)
                 WGData(who, 2) = wy + (y - oy)
-        WinDrwMng (who)
+        GetStats who, crap$, dx, dy, dw, dh, dstate
+        RedrawRectUnion sx, sy, sx + sw, sy + sh, dx, dy, dx + dw, dy + dh
         ELSE
         mouse.show
         END IF
@@ -1005,11 +1016,12 @@ DO
         IF lx = x AND ly = y THEN
         ELSE
         mouse.hide
-        WinUnDrw (who)
-        
+        GetStats who, crap$, sx, sy, sw, sh, sstate
+
         IF what <> 2 THEN WGData(who, 3) = ww + (x - ox)
         IF what <> 1 THEN WGData(who, 4) = wh + (y - oy)
-        WinDrwMng (who)
+        GetStats who, crap$, dx, dy, dw, dh, dstate
+        RedrawRectUnion sx, sy, sx + sw, sy + sh, dx, dy, dx + dw, dy + dh
         mouse.show
         END IF
 LOOP UNTIL mouse.getbutton <> LB
@@ -1104,42 +1116,97 @@ WOrder(1) = num
 END SUB
 
 SUB WinPutTop (who)
-mouse.hide
+GetStats who, crap$, x, y, w, h, state
 IF WOrder(1) <> who THEN
+        mouse.hide
         WinMakeHighest who
-        WinUnDrw who
-        WinDrwMng who
+        RedrawRect x, y, x + w, y + h
+        mouse.show
 END IF
-mouse.show
 END SUB
 
-SUB WinUnDrw (who)
-GetStats who, crap$, x, y, w, h, state
-IF state <> 0 THEN height = h ELSE height = TtlHeight
-LINE (x, y)-(x + w, y + height), 4, BF
+SUB AddRect (x1, y1, x2, y2)
+IF x1 > x2 OR y1 > y2 THEN EXIT SUB
+IF VRCount >= 200 THEN EXIT SUB
+VRCount = VRCount + 1
+VRX(VRCount) = x1
+VRY(VRCount) = y1
+VRX2(VRCount) = x2
+VRY2(VRCount) = y2
+END SUB
 
-DIM ReDrawn(WNumber) AS INTEGER
-
-ReDrawn(who) = 1
-
-FOR Cyc = WNumber TO 1 STEP -1
-        CW = WOrder(Cyc)
-        IF CW <> who THEN
-        GetStats CW, crap$, x, y, w, h, state
-
-        FOR TCW = 1 TO WNumber
-                       
-                GetStats TCW, crap$, tx, ty, tw, th, tstate
-
-                IF x + w >= tx AND x <= tx + tw AND y + h >= ty AND y <= ty + th AND TCW <> CW AND ReDrawn(TCW) THEN
-
-                ReDrawn(CW) = 1
-
-                WinDrwMng CW
-                EXIT FOR
-                END IF
-
-        NEXT
+SUB SubtractRect (cx1, cy1, cx2, cy2)
+oldN = VRCount
+FOR i = 1 TO oldN
+        SubX1(i) = VRX(i)
+        SubY1(i) = VRY(i)
+        SubX2(i) = VRX2(i)
+        SubY2(i) = VRY2(i)
+NEXT
+VRCount = 0
+FOR i = 1 TO oldN
+        rx1 = SubX1(i): ry1 = SubY1(i)
+        rx2 = SubX2(i): ry2 = SubY2(i)
+        ix1 = rx1: IF cx1 > ix1 THEN ix1 = cx1
+        iy1 = ry1: IF cy1 > iy1 THEN iy1 = cy1
+        ix2 = rx2: IF cx2 < ix2 THEN ix2 = cx2
+        iy2 = ry2: IF cy2 < iy2 THEN iy2 = cy2
+        IF ix1 > ix2 OR iy1 > iy2 THEN
+                AddRect rx1, ry1, rx2, ry2
+        ELSE
+                IF ry1 < iy1 THEN AddRect rx1, ry1, rx2, iy1 - 1
+                IF iy2 < ry2 THEN AddRect rx1, iy2 + 1, rx2, ry2
+                IF rx1 < ix1 THEN AddRect rx1, iy1, ix1 - 1, iy2
+                IF ix2 < rx2 THEN AddRect ix2 + 1, iy1, rx2, iy2
         END IF
 NEXT
+END SUB
+
+SUB RedrawRect (x1, y1, x2, y2)
+IF x1 < 0 THEN x1 = 0
+IF y1 < 0 THEN y1 = 0
+IF x2 > 639 THEN x2 = 639
+IF y2 > 479 THEN y2 = 479
+IF x1 > x2 OR y1 > y2 THEN EXIT SUB
+
+' One bg sweep over the dirty rect, then front-to-back windows masked by what's
+' already been painted. Each window pixel ends up written once on top of bg.
+VIEW SCREEN (x1, y1)-(x2, y2)
+LINE (x1, y1)-(x2, y2), 4, BF
+VIEW
+
+FOR Cyc = 1 TO WNumber
+        CW = WOrder(Cyc)
+        GetStats CW, crap$, wx, wy, ww, wh, wstate
+        wxr = wx + ww: wyr = wy + wh
+        ix1 = wx: IF x1 > ix1 THEN ix1 = x1
+        iy1 = wy: IF y1 > iy1 THEN iy1 = y1
+        ix2 = wxr: IF x2 < ix2 THEN ix2 = x2
+        iy2 = wyr: IF y2 < iy2 THEN iy2 = y2
+        IF ix1 <= ix2 AND iy1 <= iy2 THEN
+                VRCount = 0
+                AddRect ix1, iy1, ix2, iy2
+                FOR P = 1 TO Cyc - 1
+                        PW = WOrder(P)
+                        GetStats PW, crap$, px, py, pww, pwh, pstate
+                        SubtractRect px, py, px + pww, py + pwh
+                NEXT
+                FOR k = 1 TO VRCount
+                        IF VRX(k) < VRX2(k) AND VRY(k) < VRY2(k) THEN
+                                VIEW SCREEN (VRX(k), VRY(k))-(VRX2(k), VRY2(k))
+                                WinDrwMng CW
+                        END IF
+                NEXT
+        END IF
+NEXT
+VIEW
+END SUB
+
+SUB RedrawRectUnion (ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2)
+ux1 = ox1: uy1 = oy1: ux2 = ox2: uy2 = oy2
+IF nx1 < ux1 THEN ux1 = nx1
+IF ny1 < uy1 THEN uy1 = ny1
+IF nx2 > ux2 THEN ux2 = nx2
+IF ny2 > uy2 THEN uy2 = ny2
+RedrawRect ux1, uy1, ux2, uy2
 END SUB
