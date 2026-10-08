@@ -13,14 +13,3 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
-
----
-
-This license does not cover the following files and code, which keep their
-own terms:
-
-- qb11.zip: Microsoft QBasic 1.1, under Microsoft's terms.
-- The Vmouse routine by Mark K. Kim inside SNUGGLE.BAS, under its author's
-  terms.
-- .github/workflows/build-and-deploy.yml, which is based on a Google example
-  and keeps its Apache License 2.0 header.
