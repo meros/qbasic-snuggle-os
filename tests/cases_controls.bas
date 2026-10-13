@@ -77,6 +77,44 @@ WinPutTop 1
 Check "raised, the Clear button takes the click", CtlAt(210, 200) = 8, STR$(CtlAt(210, 200))
 CompareToLegacy "look: controls window raised over the cover"
 
+'Resizing keeps the client area and repaints the frame, the title bar and the
+'controls that start or stop fitting: one pixel at a time through the size where
+'each control appears.
+Scene 4
+RepaintRect 0, 0, 639, 479
+WinPutTop 1
+WinSizeTo 1, 100, 60
+CompareToLegacy "resize: shrink, controls drop out"
+FOR i = 1 TO 8
+        WinSizeTo 1, 100 + i * 31, 60 + i * 21
+        CompareToLegacy "resize: grow, step" + STR$(i)
+NEXT
+FOR i = 1 TO 5
+        WinSizeTo 1, 340 - i * 23, 230 - i * 17
+        CompareToLegacy "resize: shrink, step" + STR$(i)
+NEXT
+WinSizeTo 1, 341, 231
+CompareToLegacy "resize: one pixel larger"
+WinSizeTo 1, 340, 230
+
+'Moving the window copies its pixels, controls included.
+WinPutTop 1
+WinMoveTo 1, 90, 60
+CompareToLegacy "look: controls window moved by a copy"
+CtlActivate 3
+CompareToLegacy "controls: checkbox on a moved window"
+CtlDown = 8
+CtlRedraw 8
+CompareToLegacy "controls: button pressed while a window is in front of it"
+CtlDown = 0
+CtlRedraw 8
+WinPutTop 2
+CtlDown = 7
+CtlRedraw 7
+CompareToLegacy "controls: button pressed in a window that is not in front"
+CtlDown = 0
+CtlRedraw 7
+
 '6. A control redraw touches the control and little else.
 gWrites = 0
 CtlRedraw 3

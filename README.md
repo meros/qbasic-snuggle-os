@@ -52,6 +52,26 @@ changed pixel on a drag, against 2.9 to 4.9 for the 1999 code).
 - `ClipOn` and `ClipOff` set the clip. A clip one pixel thick is padded and
   restored, because `VIEW SCREEN` rejects it (error 5).
 
+### Speed
+
+Dragging copies the window's pixels (`GET`/`PUT` in bands) and repaints only
+the strips it uncovers; a resize repaints the title bar, the frame and the
+area gained or lost; text is drawn from ready-made glyph sprites. Same
+operations, same machine, DOSBox without the retrace wait (`scripts/test.sh`,
+speed program; seconds vary by about 30%, graphics calls are exact):
+
+| Operation | 1999 code | now | graphics calls |
+| --- | --- | --- | --- |
+| drag a window, 40 steps | 7.2 s | 0.65 s | 71,400 to 320 |
+| resize, 20 steps | 3.2 s | 0.45 s | 36,500 to 1,980 |
+| maximise, restore, roll up, unroll (x3) | 2.5 s | 0.45 s | 17,478 to 1,530 |
+| toggle a checkbox, 20 times | 0.66 s | 0.16 s | 6,800 to 340 |
+| full repaint, 3 times | 0.39 s | 0.11 s | 5,454 to 414 |
+
+A drag of the front window writes each changed pixel once (1.00 writes per
+changed pixel; the 1999 code wrote 2.9 to 3.7). A window that is not in front
+is repainted through the clip: 1.2 writes per pixel.
+
 ## Controls
 
 A window can hold labels, buttons, checkboxes, radio buttons and text boxes.
@@ -75,7 +95,7 @@ A control that does not fit inside the client area is not drawn.
 ## Tests
 
 ```sh
-scripts/test.sh            # smoke run, then 58 pixel comparisons and 30 checks
+scripts/test.sh            # smoke run, then 99 pixel comparisons, glyph and behaviour checks
 scripts/screenshot.sh      # PNG of the program after its first paint (build/screenshot.png)
 nix run .#test             # the tests, with the tools from nixpkgs
 ```
@@ -88,9 +108,10 @@ compares the dumps pixel by pixel on the host. A failing case writes
 idle machine. DOSBox sometimes crashes at start under Xvfb; the script runs the
 test again when that happens.
 
-The test build replaces the vendored mouse library with stubs. QBasic 1.1 does
-not start a program of about 55 KB of code (52.9 KB starts, 55.5 KB does not;
-comments do not count), and `SNUGGLE.BAS` plus the cases would pass that.
+The cases run as three programs (window, controls, speed), and the test build
+leaves out the mouse library, the hit tests, the drag loops and the palette
+setup. QBasic 1.1 does not start a program of about 55 KB of code (52.9 KB
+starts, 55.5 KB does not; comments do not count), and `SNUGGLE.BAS` is 50 KB.
 
 ## Layout
 

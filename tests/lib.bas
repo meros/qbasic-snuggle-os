@@ -181,16 +181,42 @@ Dump "B"
 Emit "SNAP" + STR$(SnapNo) + " glyphs: cout equals PRINT, colour" + STR$(colo)
 END SUB
 
+'The ready-made glyphs (PUT) against the runs (LINE): the same text on the same
+'background must give the same pixels.
+SUB SpriteCase (fg, bg)
+FOR pass = 0 TO 1
+        gFill 0, 0, 639, 479, bg
+        IF pass = 0 THEN CoutBg = -1 ELSE CoutBg = bg
+        FOR rw = 0 TO 1
+                t$ = ""
+                FOR c = 0 TO 47
+                        t$ = t$ + CHR$(32 + rw * 48 + c)
+                NEXT
+                cout t$, 3, rw * 24 + 5, fg, 640, 0
+        NEXT
+        CoutBg = -1
+        IF pass = 0 THEN
+                SnapNo = SnapNo + 1
+                Dump "A"
+        ELSE
+                Dump "B"
+        END IF
+NEXT
+Emit "SNAP" + STR$(SnapNo) + " sprites equal runs, colour" + STR$(fg) + " on" + STR$(bg)
+END SUB
+
 'Time and count what a run of operations costs.
 SUB PerfStart
 gWrites = 0
 gCalls = 0
 gPsets = 0
+NoSync = -1
 PerfT = TIMER
 END SUB
 
 SUB PerfStop (lbl$)
 dt! = TIMER - PerfT
+NoSync = 0
 Metric "speed: " + lbl$ + ": seconds", dt!
 Metric "speed: " + lbl$ + ": graphics calls", CSNG(gCalls)
 Metric "speed: " + lbl$ + ": single pixels", CSNG(gPsets)

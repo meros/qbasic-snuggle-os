@@ -47,9 +47,11 @@ function pointers.
 - **"Freestanding":** the source is separate; the running program is not.
 - **Cost:** low. Everything needed exists in the engine now.
 - **Limit (measured):** about 53 to 55 KB of code per program (see the table).
-  `SNUGGLE.BAS` was 50 KB with the controls, and 39 KB after the unused mouse
-  procedures were removed, so an app layer has roughly 14 KB to grow into.
-  Apps will need to be small, or the kernel smaller.
+  `SNUGGLE.BAS` is 50 KB now (39 KB after the unused mouse procedures were
+  removed, then the faster drawing, the glyph sprites and the controls were
+  added). That leaves about 3 KB. An app layer needs room first: the vendored
+  mouse library (about 10 KB of code, one machine-code string per call) is the
+  obvious thing to shrink, or the kernel has to be split with `CHAIN`.
 
 ### B. Apps as separate programs with `CHAIN`
 

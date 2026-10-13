@@ -14,6 +14,11 @@ ComparePrim 3, 300, 200, 312, 212
 GlyphCase 9
 GlyphCase 2
 
+'1c. Ready-made glyphs equal the runs, for the three text styles.
+SpriteCase 2, 6
+SpriteCase 0, 15
+SpriteCase 0, 3
+
 '2. A full repaint equals the back-to-front reference, for each scene.
 FOR sc = 1 TO 3
         Scene sc
@@ -37,6 +42,44 @@ ThinCase "row at the top screen edge", 0, 0, 639, 0
 ThinCase "row just above a covering window", 260, 149, 300, 149
 ThinCase "column just left of a covering window", 249, 160, 249, 180
 ThinCase "pixel just above a covering window", 280, 149, 280, 149
+
+'2c. Moving the window in front copies its pixels (GET and PUT in bands) and
+'repaints what the window uncovers. Steps of every direction, an odd x, a jump
+'that does not overlap, off the screen and back, and a rolled up window.
+Scene 2
+RepaintRect 0, 0, 639, 479
+WinPutTop 2
+CompareToLegacy "copy: raise window 2"
+FOR i = 1 TO 6
+        WinMoveTo 2, WGData(2, 1) + 23, WGData(2, 2) + 9
+NEXT
+CompareToLegacy "copy: six steps down and right"
+FOR i = 1 TO 6
+        WinMoveTo 2, WGData(2, 1) - 17, WGData(2, 2) - 14
+NEXT
+CompareToLegacy "copy: six steps up and left"
+WinMoveTo 2, -60, -20
+CompareToLegacy "copy: off the top left"
+WinMoveTo 2, 20, 10
+CompareToLegacy "copy: back from off the screen"
+WinMoveTo 2, 500, 400
+CompareToLegacy "copy: off the bottom right"
+WinMoveTo 2, 100, 60
+CompareToLegacy "copy: back"
+WinMoveTo 2, 101, 60
+CompareToLegacy "copy: one pixel right"
+WinMoveTo 2, 101, 59
+CompareToLegacy "copy: one pixel up"
+WinMoveTo 2, 330, 300
+CompareToLegacy "copy: a jump that does not overlap"
+WinMoveTo 2, 0, 0
+CompareToLegacy "copy: to the corner"
+WinSetState 2, 0
+CompareToLegacy "copy: rolled up"
+WinMoveTo 2, 50, 200
+CompareToLegacy "copy: move a rolled up window"
+WinSetState 2, 1
+CompareToLegacy "copy: unroll it"
 
 '3. Each incremental operation leaves the screen as a full repaint would.
 Scene 2

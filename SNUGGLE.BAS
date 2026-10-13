@@ -44,6 +44,12 @@ DECLARE FUNCTION CtlGetText$ (id%)
 DECLARE SUB CtlSetChecked (id%, v%)
 DECLARE FUNCTION CtlGetChecked% (id%)
 DECLARE SUB gCircle (x%, y%, r%, c%)
+DECLARE SUB gGet (x1%, y1%, x2%, y2%)
+DECLARE SUB gGlyph (gx%, gy%, num%, colo%, st%)
+DECLARE SUB gGetSprite (so%)
+DECLARE SUB gPut (x%, y%)
+DECLARE SUB BlitMove (x1%, y1%, x2%, y2%, dx%, dy%)
+DECLARE SUB RepaintMinus (x1%, y1%, x2%, y2%, dx1%, dy1%, dx2%, dy2%)
 DECLARE FUNCTION Outside% (x1%, y1%, x2%, y2%)
 DECLARE SUB gView (x1%, y1%, x2%, y2%)
 DECLARE SUB gViewOff ()
@@ -129,9 +135,16 @@ DIM SHARED ClipRowX AS INTEGER
 DIM SHARED ClipRowY AS INTEGER
 DIM SHARED Ctl(CtlMax) AS CtlRec
 DIM SHARED CtlCount AS INTEGER
+DIM SHARED VisOld(CtlMax) AS INTEGER           'which controls were drawn before a resize
 DIM SHARED CtlFocus AS INTEGER          'text box that receives the keys, 0 for none
 DIM SHARED CtlDown AS INTEGER           'button that is held down, 0 for none
 DIM SHARED CtlEvent AS INTEGER          'control that was clicked or accepted, 0 for none
+DIM SHARED SprData(9800) AS INTEGER     'ready-made glyphs 32 to 127 for each text style: PUT, no LINEs
+DIM SHARED SprFg(2) AS INTEGER          'text styles: colour of the glyph and of the background behind it
+DIM SHARED SprBg(2) AS INTEGER
+DIM SHARED CoutBg AS INTEGER            'background colour behind the text cout draws, -1 for unknown
+DIM SHARED NoSync AS INTEGER           'the tests set it: no wait for the retrace
+DIM SHARED BlitBuf(8100) AS INTEGER      'one band of screen rows, for BlitMove
 DIM SHARED ClipActive AS INTEGER        'cout skips glyphs outside the clip
 DIM SHARED ClipLX1 AS INTEGER
 DIM SHARED ClipLY1 AS INTEGER
@@ -248,6 +261,7 @@ IF UCASE$(k$) = "R" THEN refresh
 LOOP UNTIL UCASE$(k$) = "Q"
 '@@RUN-END
 
+'@@HIT-BEGIN
 FUNCTION CheckIfBorder (what, who)
 GetStats who, crap$, wx, wy, ww, wh, wstate
 mouse.getpos x, y
@@ -308,9 +322,18 @@ END IF
 NEXT
 
 END FUNCTION
+'@@HIT-END
 
 SUB cout (text$, sx, sy, colo, Lengh, break)
 DIM charlengh AS INTEGER
+
+'A known background and colour pair has ready-made glyphs.
+st = -1
+IF CoutBg >= 0 THEN
+        FOR i = 0 TO 2
+                IF SprFg(i) = colo AND SprBg(i) = CoutBg THEN st = i
+        NEXT
+END IF
 
 charlengh = (Lengh - (Lengh MOD 8)) / 8
 RowChar = 0
@@ -327,15 +350,7 @@ FOR Char = 1 TO LEN(text$)
         ELSE
                 vis = -1
         END IF
-        IF vis THEN
-                k = GlyphFirst(num)
-                FOR n = 1 TO GlyphRuns(num)
-                        v = GlyphData(k)
-                        k = k + 1
-                        ry = sy + 1 + v \ 64
-                        gLine gx + ((v \ 8) AND 7), ry, gx + (v AND 7), ry, colo
-                NEXT
-        END IF
+        IF vis THEN gGlyph gx, sy + 1, num, colo, st
 NEXT
 stopthis:
 END SUB
@@ -382,6 +397,20 @@ FOR a = 15 TO 255
         GlyphRuns(a) = GlyphTop - GlyphFirst(a)
 NEXT
 
+'Ready-made glyphs: title text, text on the client area, text on a button.
+SprFg(0) = 2: SprBg(0) = 6
+SprFg(1) = 0: SprBg(1) = 15
+SprFg(2) = 0: SprBg(2) = 3
+CoutBg = -1
+FOR st = 0 TO 2
+        FOR c = 32 TO 127
+                gFill 0, 0, 7, 15, SprBg(st)
+                gGlyph 0, 0, c, SprFg(st), -1
+                spr = (st * 96 + c - 32) * 34
+                gGetSprite spr
+        NEXT
+NEXT
+
 END SUB
 
 SUB DrwBtn (x, y, w, h, up)
@@ -415,6 +444,7 @@ IF state = 2 THEN w = 640: h = 480: x = 0: y = 0
 
 END SUB
 
+'@@INIT-BEGIN
 SUB Init
 CoutSetup
 OUT &H3C8, 0
@@ -458,6 +488,7 @@ OUT &H3C9, 0
 OUT &H3C9, 42
 
 END SUB
+'@@INIT-END
 
 SUB MaxButton (x, y)
 gLine x + 2, y + 4, x + 10, y + 4, 1
@@ -738,6 +769,7 @@ RepaintRect 0, 0, 639, 479
 mouse.show
 END SUB
 
+'@@DRAG-BEGIN
 SUB StartDrag (who)
 mouse.setgcr move
 mouse.getpos ox, oy
@@ -788,6 +820,7 @@ END IF
 NEXT
 StringFind = a
 END FUNCTION
+'@@DRAG-END
 
 SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
         IF NOT Outside(x, y, x + w, y + TtlHeight) THEN
@@ -796,7 +829,9 @@ SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
                 CharsVis = (Lengh - (Lenght MOD 8)) / 8
                 print$ = MID$(text$, 1, CharsVis)
                 IF LEN(text$) <> LEN(print$) AND LEN(print$) >= 3 THEN MID$(print$, LEN(print$) - 2, 3) = "..."
+                CoutBg = 6
                 cout print$, x + 5, y, 2, Lengh + 8, 0
+                CoutBg = -1
 
                 DrwBtn x + w - TtlHeight * 3, y + 3, TtlHeight - 6, TtlHeight - 6, btnA
                 DrwBtn x + w - TtlHeight * 2, y + 3, TtlHeight - 6, TtlHeight - 6, btnB
@@ -887,27 +922,98 @@ END SUB
 'Move a window and paint only what changed.
 SUB WinMoveTo (who, nx, ny)
 WinRect who, ox1, oy1, ox2, oy2
+dx = nx - WGData(who, 1)
+dy = ny - WGData(who, 2)
+IF dx = 0 AND dy = 0 THEN EXIT SUB
 WGData(who, 1) = nx
 WGData(who, 2) = ny
 WinRect who, nx1, ny1, nx2, ny2
+
+'The window in front shows all of itself, so its pixels can be copied. Only the
+'part that is on the screen before and after can be.
+IF WOrder(1) = who AND ClipActive = 0 THEN
+        sx1 = ox1
+        IF sx1 < 0 THEN sx1 = 0
+        IF sx1 + dx < 0 THEN sx1 = -dx
+        sx2 = ox2
+        IF sx2 > 639 THEN sx2 = 639
+        IF sx2 + dx > 639 THEN sx2 = 639 - dx
+        sy1 = oy1
+        IF sy1 < 0 THEN sy1 = 0
+        IF sy1 + dy < 0 THEN sy1 = -dy
+        sy2 = oy2
+        IF sy2 > 479 THEN sy2 = 479
+        IF sy2 + dy > 479 THEN sy2 = 479 - dy
+        IF sx1 <= sx2 AND sy1 <= sy2 THEN
+                mouse.hide
+                WaitRetrace
+                BlitMove sx1, sy1, sx2, sy2, dx, dy
+                RepaintMinus ox1, oy1, ox2, oy2, sx1 + dx, sy1 + dy, sx2 + dx, sy2 + dy
+                RepaintMinus nx1, ny1, nx2, ny2, sx1 + dx, sy1 + dy, sx2 + dx, sy2 + dy
+                mouse.show
+                EXIT SUB
+        END IF
+END IF
 RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
 END SUB
 
 'Resize a window and paint only what changed.
 SUB WinSizeTo (who, nw, nh)
 WinRect who, ox1, oy1, ox2, oy2
+oldst = WGData(who, 5)
+FOR i = 1 TO CtlCount
+        IF Ctl(i).win = who THEN VisOld(i) = CtlVisible(i)
+NEXT
 WGData(who, 3) = nw
 WGData(who, 4) = nh
 WinRect who, nx1, ny1, nx2, ny2
-RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+IF oldst <> 1 THEN
+        RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+        EXIT SUB
+END IF
+
+'A normal window keeps its top left corner. Repaint what left the window or
+'joined it, the title bar (the buttons move and the title is cut to the width),
+'and the frame bands. The client area keeps its pixels, except for controls that
+'now fit or no longer fit.
+mouse.hide
+WaitRetrace
+RepaintMinus ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+RepaintMinus nx1, ny1, nx2, ny2, ox1, oy1, ox2, oy2
+RepaintRect nx1, ny1, nx2, ny1 + TtlHeight
+fy = ny1 + TtlHeight + 1
+RepaintRect nx2 - 3, fy, nx2, ny2
+RepaintRect nx1, ny2 - 3, nx2, ny2
+IF ox2 < nx2 THEN RepaintRect ox2 - 3, fy, ox2, ny2
+IF oy2 < ny2 THEN RepaintRect nx1, oy2 - 3, nx2, oy2
+FOR i = 1 TO CtlCount
+        IF Ctl(i).win = who THEN
+                IF VisOld(i) <> CtlVisible(i) THEN
+                        CtlRect i, cx1, cy1, cx2, cy2
+                        RepaintRect cx1, cy1, cx2, cy2
+                END IF
+        END IF
+NEXT
+mouse.show
 END SUB
 
 'Set the window state (0 rolled up, 1 normal, 2 maximised) and paint only what changed.
 SUB WinSetState (who, st)
 WinRect who, ox1, oy1, ox2, oy2
+oldst = WGData(who, 5)
 WGData(who, 5) = st
 WinRect who, nx1, ny1, nx2, ny2
-RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+IF oldst <> 2 AND st <> 2 THEN
+        'rolled up or normal before and after: same position and width, same
+        'title bar. Only the part below it changes.
+        IF oy2 > ny2 THEN ny2 = oy2
+        mouse.hide
+        WaitRetrace
+        RepaintRect nx1, ny1 + TtlHeight + 1, nx2, ny2
+        mouse.show
+ELSE
+        RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+END IF
 END SUB
 
 'Paint the area the old rectangle covered, then the part of the new rectangle
@@ -935,7 +1041,8 @@ END SUB
 'Each window is drawn through a clip (VIEW SCREEN) on the part of the rectangle
 'that is still free, then that part is taken off the list. What is left at the
 'end is background. No pixel is written twice, so nothing is erased and redrawn.
-SUB RepaintRect (rx1, ry1, rx2, ry2)
+SUB RepaintRect (px1, py1, px2, py2)
+rx1 = px1: ry1 = py1: rx2 = px2: ry2 = py2
 IF rx1 < 0 THEN rx1 = 0
 IF ry1 < 0 THEN ry1 = 0
 IF rx2 > 639 THEN rx2 = 639
@@ -1031,10 +1138,55 @@ ClipCol = 0
 ClipRow = 0
 END SUB
 
+'Copy the pixels of a screen rectangle by (dx, dy). Source and destination are
+'both on the screen. GET and PUT work on bands that fit one buffer; the bands go
+'in the direction that never overwrites rows still to be read.
+SUB BlitMove (x1, y1, x2, y2, dx, dy)
+rowbytes = 4 * (((x2 - x1 + 1) + 7) \ 8)
+rows = 16000 \ rowbytes
+IF rows < 1 THEN rows = 1
+IF dy > 0 THEN
+        by2 = y2
+        DO WHILE by2 >= y1
+                by1 = by2 - rows + 1
+                IF by1 < y1 THEN by1 = y1
+                gGet x1, by1, x2, by2
+                gPut x1 + dx, by1 + dy
+                by2 = by1 - 1
+        LOOP
+ELSE
+        by1 = y1
+        DO WHILE by1 <= y2
+                by2 = by1 + rows - 1
+                IF by2 > y2 THEN by2 = y2
+                gGet x1, by1, x2, by2
+                gPut x1 + dx, by1 + dy
+                by1 = by2 + 1
+        LOOP
+END IF
+END SUB
+
+'Paint a rectangle except for another rectangle inside or across it.
+SUB RepaintMinus (x1, y1, x2, y2, dx1, dy1, dx2, dy2)
+IF dx2 < x1 OR dx1 > x2 OR dy2 < y1 OR dy1 > y2 THEN
+        RepaintRect x1, y1, x2, y2
+        EXIT SUB
+END IF
+IF y1 < dy1 THEN RepaintRect x1, y1, x2, dy1 - 1
+IF y2 > dy2 THEN RepaintRect x1, dy2 + 1, x2, y2
+top = y1
+IF dy1 > top THEN top = dy1
+bot = y2
+IF dy2 < bot THEN bot = dy2
+IF x1 < dx1 THEN RepaintRect x1, top, dx1 - 1, bot
+IF x2 > dx2 THEN RepaintRect dx2 + 1, top, x2, bot
+END SUB
+
 'Wait for the start of the vertical retrace, so a repaint starts right after the
 'monitor picked up the previous frame. Gives up after 50 ms in case the port
 'does not change (some emulators).
 SUB WaitRetrace
+IF NoSync THEN EXIT SUB
 t# = TIMER
 DO WHILE (INP(&H3DA) AND 8)
         IF ABS(TIMER - t#) > .05 THEN EXIT SUB
@@ -1094,6 +1246,52 @@ END SUB
 SUB gCircle (x, y, r, c)
 IF Outside(x - r, y - r, x + r, y + r) THEN EXIT SUB
 CIRCLE (x, y), r, c
+END SUB
+
+'One glyph: its runs of set pixels, from the top row gy. Inside the clip the
+'runs go straight to LINE; at the edge each is tested first.
+SUB gGlyph (gx, gy, num, colo, st)
+IF st >= 0 AND num >= 32 AND num <= 127 THEN
+        IF ClipActive THEN
+                inside = gx >= ClipLX1 AND gx + 7 <= ClipLX2 AND gy >= ClipLY1 AND gy + 15 <= ClipLY2
+        ELSE
+                inside = gx >= 0 AND gx + 7 <= 639 AND gy >= 0 AND gy + 15 <= 479
+        END IF
+        IF inside THEN
+                PUT (gx, gy), SprData((st * 96 + num - 32) * 34), PSET
+                EXIT SUB
+        END IF
+END IF
+k = GlyphFirst(num)
+IF ClipActive THEN
+        inside = gx >= ClipLX1 AND gx + 7 <= ClipLX2 AND gy >= ClipLY1 AND gy + 15 <= ClipLY2
+ELSE
+        inside = gx >= 0 AND gx + 7 <= 639 AND gy >= 0 AND gy + 15 <= 479
+END IF
+FOR n = 1 TO GlyphRuns(num)
+        v = GlyphData(k)
+        k = k + 1
+        ry = gy + v \ 64
+        x0 = gx + ((v \ 8) AND 7)
+        x1 = gx + (v AND 7)
+        IF inside THEN
+                LINE (x0, ry)-(x1, ry), colo
+        ELSEIF NOT Outside(x0, ry, x1, ry) THEN
+                LINE (x0, ry)-(x1, ry), colo
+        END IF
+NEXT
+END SUB
+
+SUB gGetSprite (so)
+GET (0, 0)-(7, 15), SprData(so)
+END SUB
+
+SUB gGet (x1, y1, x2, y2)
+GET (x1, y1)-(x2, y2), BlitBuf
+END SUB
+
+SUB gPut (x, y)
+PUT (x, y), BlitBuf, PSET
 END SUB
 '@@GFX-END
 
@@ -1159,7 +1357,8 @@ h = Ctl(id).h
 cap$ = RTRIM$(Ctl(id).cap)
 SELECT CASE Ctl(id).kind
 CASE CtlLabel
-        cout cap$, x1, y1 + (h - 16) \ 2, 0, w, 0
+        CoutBg = 15
+        cout cap$, x1, y1 + (h - 16) \ 2 - 1, 0, w, 0
 CASE CtlButton
         nudge = 0
         IF CtlDown = id THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
@@ -1170,7 +1369,8 @@ CASE CtlButton
         gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
         gBox x1, y1, x2, y2, 1
         tw = LEN(cap$) * 8
-        cout cap$, x1 + (w - tw) \ 2 + nudge, y1 + (h - 16) \ 2 + nudge, 0, w, 0
+        CoutBg = 3
+        cout cap$, x1 + (w - tw) \ 2 + nudge, y1 + (h - 16) \ 2 - 1 + nudge, 0, w, 0
 CASE CtlCheck
         bx = y1 + (h - 13) \ 2
         gBox x1, bx, x1 + 12, bx + 12, 1
@@ -1181,14 +1381,16 @@ CASE CtlCheck
                 gLine x1 + 9, bx + 3, x1 + 3, bx + 9, 0
                 gLine x1 + 9, bx + 4, x1 + 4, bx + 9, 0
         END IF
-        cout cap$, x1 + 20, y1 + (h - 16) \ 2, 0, w - 20, 0
+        CoutBg = 15
+        cout cap$, x1 + 20, y1 + (h - 16) \ 2 - 1, 0, w - 20, 0
 CASE CtlRadio
         cx = x1 + 6
         cy = y1 + h \ 2
         gFill cx - 6, cy - 6, cx + 6, cy + 6, 15
         gCircle cx, cy, 6, 1
         IF Ctl(id).chk THEN gFill cx - 2, cy - 2, cx + 2, cy + 2, 0
-        cout cap$, x1 + 20, y1 + (h - 16) \ 2, 0, w - 20, 0
+        CoutBg = 15
+        cout cap$, x1 + 20, y1 + (h - 16) \ 2 - 1, 0, w - 20, 0
 CASE CtlText
         IF CtlFocus = id THEN bc = 7 ELSE bc = 1
         gBox x1, y1, x2, y2, bc
@@ -1196,12 +1398,14 @@ CASE CtlText
         n = (w - 8) \ 8
         shown$ = cap$
         IF LEN(shown$) > n THEN shown$ = RIGHT$(shown$, n)
-        cout shown$, x1 + 4, y1 + (h - 16) \ 2, 0, w - 8, 0
+        CoutBg = 15
+        cout shown$, x1 + 4, y1 + (h - 16) \ 2 - 1, 0, w - 8, 0
         IF CtlFocus = id THEN
                 cx = x1 + 4 + LEN(shown$) * 8
                 gLine cx, y1 + 3, cx, y2 - 3, 0
         END IF
 END SELECT
+CoutBg = -1
 END SUB
 
 'Draw the controls of one window, in the order they were added. A control
@@ -1230,7 +1434,37 @@ SUB CtlRedraw (id)
 IF id < 1 OR id > CtlCount THEN EXIT SUB
 IF NOT CtlVisible(id) THEN EXIT SUB
 CtlRect id, x1, y1, x2, y2
-RepaintChange x1, y1, x2, y2, x1, y1, x2, y2
+'Is a window in front of this one over the control?
+covered = 0
+FOR Cyc = 1 TO WNumber
+        CW = WOrder(Cyc)
+        IF CW = Ctl(id).win THEN EXIT FOR
+        WinRect CW, wx1, wy1, wx2, wy2
+        IF NOT (wx2 < x1 OR wx1 > x2 OR wy2 < y1 OR wy1 > y2) THEN
+                covered = -1
+                EXIT FOR
+        END IF
+NEXT
+IF covered THEN
+        RepaintChange x1, y1, x2, y2, x1, y1, x2, y2
+ELSE
+        'Nothing in front: the client background, then the controls of this
+        'window that touch the rectangle, in the order they were added.
+        mouse.hide
+        WaitRetrace
+        ClipOn x1, y1, x2, y2
+        gFill x1, y1, x2, y2, 15
+        FOR i = 1 TO CtlCount
+                IF Ctl(i).win = Ctl(id).win THEN
+                        CtlRect i, ax1, ay1, ax2, ay2
+                        IF NOT (ax2 < x1 OR ax1 > x2 OR ay2 < y1 OR ay1 > y2) THEN
+                                IF CtlVisible(i) THEN CtlDraw i
+                        END IF
+                END IF
+        NEXT
+        ClipOff
+        mouse.show
+END IF
 END SUB
 
 'The control that takes a click at a screen point in this window, 0 for none.

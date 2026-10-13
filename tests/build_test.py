@@ -7,6 +7,8 @@ With --smoke it prints SNUGGLE.BAS with a stop after the first paint instead.
 The program under test is the real SNUGGLE.BAS. Three things change:
   - the run section ('@@RUN-BEGIN .. '@@RUN-END) becomes the test body,
   - the drawing layer ('@@GFX-BEGIN .. '@@GFX-END) becomes a counting layer,
+  - the hit tests, the drag loops and the palette setup are left out or stubbed
+    (the cases call the engine directly),
   - the vendored mouse library ('@@MOUSE-BEGIN .. '@@MOUSE-END) becomes stubs: a
     QBasic 1.1 program of about 55 KB of code does not start (see
     docs/APPS-AND-API.md), and the cases need no mouse,
@@ -56,6 +58,9 @@ if "--smoke" in sys.argv:
 out = swap(src, "RUN-BEGIN", "RUN-END", part("run_body.bas"))
 out = swap(out, "GFX-BEGIN", "GFX-END", part("gfx.bas"))
 out = swap(out, "MOUSE-BEGIN", "MOUSE-END", part("mouse_stub.bas"))
+out = swap(out, "HIT-BEGIN", "HIT-END", "")
+out = swap(out, "DRAG-BEGIN", "DRAG-END", "")
+out = swap(out, "INIT-BEGIN", "INIT-END", "SUB Init\nCoutSetup\nEND SUB\n")
 
 marker = "'***************\n"
 if out.count(marker) < 1:
