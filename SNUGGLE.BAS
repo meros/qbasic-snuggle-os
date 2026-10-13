@@ -16,7 +16,21 @@ DECLARE SUB WinPutTop (who%)
 DECLARE FUNCTION CheckIfWinArea% (who%)
 DECLARE FUNCTION CheckWinArea% (who%)
 DECLARE SUB WinMakeHighest (num%)
-DECLARE SUB WinUnDrw (who%)
+DECLARE SUB WinMoveTo (who%, nx%, ny%)
+DECLARE SUB WinSizeTo (who%, nw%, nh%)
+DECLARE SUB WinSetState (who%, st%)
+DECLARE SUB WinRect (who%, x1%, y1%, x2%, y2%)
+DECLARE SUB RepaintRect (x1%, y1%, x2%, y2%)
+DECLARE SUB RepaintChange (ox1%, oy1%, ox2%, oy2%, nx1%, ny1%, nx2%, ny2%)
+DECLARE SUB WaitRetrace ()
+DECLARE SUB ClipOn (x1%, y1%, x2%, y2%)
+DECLARE SUB ClipOff ()
+DECLARE SUB gView (x1%, y1%, x2%, y2%)
+DECLARE SUB gViewOff ()
+DECLARE SUB gFill (x1%, y1%, x2%, y2%, c%)
+DECLARE SUB gBox (x1%, y1%, x2%, y2%, c%)
+DECLARE SUB gLine (x1%, y1%, x2%, y2%, c%)
+DECLARE SUB gPset (x%, y%, c%)
 DECLARE SUB StartDrag (who%)
 DECLARE SUB mouse.getpos (x%, y%)
 DECLARE FUNCTION CheckIfTitle% (who%)
@@ -60,6 +74,27 @@ DIM SHARED WNumber AS INTEGER
 DIM SHARED WGData(WNMax, 6) AS INTEGER
 DIM SHARED WTData(WNMax) AS STRING
 DIM SHARED WOrder(WNMax) AS INTEGER
+DIM SHARED FreeRX1(64) AS INTEGER   'Repaint work list: rectangles still to paint
+DIM SHARED FreeRY1(64) AS INTEGER
+DIM SHARED FreeRX2(64) AS INTEGER
+DIM SHARED FreeRY2(64) AS INTEGER
+DIM SHARED NextRX1(64) AS INTEGER   'the list being built for the next window
+DIM SHARED NextRY1(64) AS INTEGER
+DIM SHARED NextRX2(64) AS INTEGER
+DIM SHARED NextRY2(64) AS INTEGER
+DIM SHARED ClipCol AS INTEGER           'a clip one pixel thick is padded; these save the pixels
+DIM SHARED ClipColX AS INTEGER          'the padding covers, so ClipOff can put them back
+DIM SHARED ClipColY AS INTEGER
+DIM SHARED ClipRow AS INTEGER
+DIM SHARED ClipRowX AS INTEGER
+DIM SHARED ClipRowY AS INTEGER
+DIM SHARED ClipActive AS INTEGER        'cout skips glyphs outside the clip
+DIM SHARED ClipLX1 AS INTEGER
+DIM SHARED ClipLY1 AS INTEGER
+DIM SHARED ClipLX2 AS INTEGER
+DIM SHARED ClipLY2 AS INTEGER
+DIM SHARED ClipColBuf(1000) AS INTEGER  '1 x 480 pixels, four planes
+DIM SHARED ClipRowBuf(170) AS INTEGER   '640 x 1 pixels
 DIM SHARED move AS STRING
 move = mouse.loadgcr("move")
 DIM SHARED pointer AS STRING
@@ -76,11 +111,13 @@ DIM SHARED SnuggleFolder AS STRING
 'CHDIR (SnuggleFolder)
 
 DEFINT A-Z
+'@@RUN-BEGIN
 SCREEN 12
 enabled% = mouse.enable
 mouse.setgcr pointer
 mouse.show
 Init
+CLS
 
 NewWin "Alfa", 90, 90, 300, 70
 NewWin "Beta", 100, 100, 300, 70
@@ -99,17 +136,9 @@ GetStats CW, crap$, wx, wy, ww, wh, wstate
                 SELECT CASE CheckIfWinBtn(CW)
                 CASE 1
                 CASE 2
-                mouse.hide
-                        WinUnDrw CW
-                        IF WGData(CW, 5) <> 2 THEN WGData(CW, 5) = 2 ELSE WGData(CW, 5) = 1
-                        WinDrwMng CW
-                mouse.show
+                        IF WGData(CW, 5) <> 2 THEN WinSetState CW, 2 ELSE WinSetState CW, 1
                 CASE 3
-                mouse.hide
-                        WinUnDrw CW
-                        IF WGData(CW, 5) <> 0 THEN WGData(CW, 5) = 0 ELSE WGData(CW, 5) = 1
-                        WinDrwMng CW
-                mouse.show
+                        IF WGData(CW, 5) <> 0 THEN WinSetState CW, 0 ELSE WinSetState CW, 1
                 CASE ELSE
                 END SELECT
                 EXIT FOR
@@ -135,8 +164,10 @@ GetStats CW, crap$, wx, wy, ww, wh, wstate
         END IF
 NEXT
 END IF
-IF UCASE$(INKEY$) = "R" THEN refresh
-LOOP UNTIL UCASE$(INKEY$) = "Q"
+k$ = UCASE$(INKEY$)
+IF k$ = "R" THEN refresh
+LOOP UNTIL k$ = "Q"
+'@@RUN-END
 
 FUNCTION CheckIfBorder (what, who)
 GetStats who, crap$, wx, wy, ww, wh, wstate
@@ -211,12 +242,20 @@ FOR Char = 1 TO LEN(text$)
         END IF
         num = ASC(MID$(text$, Char, 1))
 
+        gx = sx + (RowChar - 1) * 8
+        IF ClipActive THEN
+                vis = gx + 7 >= ClipLX1 AND gx <= ClipLX2 AND sy + 16 >= ClipLY1 AND sy + 1 <= ClipLY2
+        ELSE
+                vis = -1
+        END IF
+        IF vis THEN
         FOR y = 1 TO 16
                 FOR x = 1 TO 8
                         IF num > 100 THEN col = font2(num - 100, x, y) ELSE col = font(num, x, y)
-                        IF col = 1 THEN PSET (sx + (x - 1) + (RowChar - 1) * 8, sy + y), colo
+                        IF col = 1 THEN gPset sx + (x - 1) + (RowChar - 1) * 8, sy + y, colo
                 NEXT
         NEXT
+        END IF
 NEXT
 stopthis:
 END SUB
@@ -249,11 +288,13 @@ END SUB
 SUB DrwBtn (x, y, w, h, up)
 IF up = 1 THEN Col1 = 1: Col2 = 3 ELSE Col2 = 1: Col1 = 3
 
-LINE (x, y)-(x + w, y + h), 2, BF
-LINE (x, y)-(x, y + h - 1), Col2
-LINE (x, y)-(x + h - 1, y), Col2
-LINE (x + w, y + h)-(x + 1, y + h), Col1
-LINE (x + w, y + h)-(x + w, y + 1), Col1
+gFill x + 1, y + 1, x + w - 1, y + h - 1, 2
+gPset x + w, y, 2
+gPset x, y + h, 2
+gLine x, y, x, y + h - 1, Col2
+gLine x + 1, y, x + h - 1, y, Col2
+gLine x + w, y + h, x + 1, y + h, Col1
+gLine x + w, y + h - 1, x + w, y + 1, Col1
 
 END SUB
 
@@ -320,15 +361,15 @@ OUT &H3C9, 42
 END SUB
 
 SUB MaxButton (x, y)
-LINE (x + 2, y + 4)-(x + 10, y + 4), 1
-LINE (x + 3, y + 3)-(x + 9, y + 3), 6
-LINE (x + 2, y + 2)-(x + 10, y + 10), 1, B
-LINE (x + 3, y + 5)-(x + 9, y + 9), 15, BF
+gLine x + 2, y + 4, x + 10, y + 4, 1
+gLine x + 3, y + 3, x + 9, y + 3, 6
+gBox x + 2, y + 2, x + 10, y + 10, 1
+gFill x + 3, y + 5, x + 9, y + 9, 15
 END SUB
 
 SUB MinButton (x, y)
-LINE (x + 3, y + 6)-(x + 9, y + 6), 6
-LINE (x + 2, y + 5)-(x + 10, y + 7), 1, B
+gLine x + 3, y + 6, x + 9, y + 6, 6
+gBox x + 2, y + 5, x + 10, y + 7, 1
 END SUB
 
 'Disable mouse.
@@ -914,22 +955,17 @@ WinMakeHighest WNumber
 END SUB
 
 SUB QuitButton (x, y)
-LINE (x + 5, y + 2)-(x + 7, y + 6), 1, B
-LINE (x + 5, y + 8)-(x + 7, y + 10), 1, B
-LINE (x + 6, y + 3)-(x + 6, y + 5), 6
-PSET (x + 6, y + 9), 6
+gBox x + 5, y + 2, x + 7, y + 6, 1
+gBox x + 5, y + 8, x + 7, y + 10, 1
+gLine x + 6, y + 3, x + 6, y + 5, 6
+gPset x + 6, y + 9, 6
 
 
 END SUB
 
 SUB refresh
 mouse.hide
-CLS
-LINE (0, 0)-(640, 480), 4, BF
-FOR Cyc = WNumber TO 1 STEP -1
-CW = WOrder(Cyc)
-WinDrwMng CW
-NEXT
+RepaintRect 0, 0, 639, 479
 mouse.show
 END SUB
 
@@ -975,16 +1011,7 @@ mouse.getpos ox, oy
 DO
         lx = x: ly = y
         mouse.getpos x, y
-        IF lx = x AND ly = y THEN
-        ELSE
-        mouse.hide
-        WinUnDrw (who)
-                WGData(who, 1) = wx + (x - ox)
-                WGData(who, 2) = wy + (y - oy)
-        WinDrwMng (who)
-        ELSE
-        mouse.show
-        END IF
+        IF lx <> x OR ly <> y THEN WinMoveTo who, wx + (x - ox), wy + (y - oy)
 LOOP UNTIL mouse.getbutton <> LB
 mouse.hide
 mouse.setgcr pointer
@@ -996,21 +1023,18 @@ mouse.hide
 IF what = 1 THEN mouse.setgcr horizont
 IF what = 2 THEN mouse.setgcr vertical
 IF what = 3 THEN mouse.setgcr diagonal
+mouse.show
 mouse.getpos ox, oy
         x = ox: y = oy
         GetStats who, crap$, wx, wy, ww, wh, wstate
 DO
         lx = x: ly = y
         mouse.getpos x, y
-        IF lx = x AND ly = y THEN
-        ELSE
-        mouse.hide
-        WinUnDrw (who)
-        
-        IF what <> 2 THEN WGData(who, 3) = ww + (x - ox)
-        IF what <> 1 THEN WGData(who, 4) = wh + (y - oy)
-        WinDrwMng (who)
-        mouse.show
+        IF lx <> x OR ly <> y THEN
+                nw = ww: nh = wh
+                IF what <> 2 THEN nw = ww + (x - ox)
+                IF what <> 1 THEN nh = wh + (y - oy)
+                WinSizeTo who, nw, nh
         END IF
 LOOP UNTIL mouse.getbutton <> LB
 mouse.hide
@@ -1053,22 +1077,24 @@ SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
 END SUB
 
 SUB WinDrwBrd (x1, y1, x2, y2)
-
-LINE (x1, y1)-(x2, y2), 15, BF
-
-LINE (x1, y1)-(x2, y2), 3, B
-LINE (x1 + 1, y1 + 1)-(x2 - 1, y2 - 1), 2, B
-LINE (x1 + 2, y1 + 2)-(x2 - 2, y2 - 2), 1, B
-
-LINE (x2 - 2, y2 - 2)-(x2 - 2, y1 + 3), 3
-LINE (x2 - 2, y2 - 2)-(x1 + 3, y2 - 2), 3
-
-LINE (x2, y2)-(x2, y1 + 1), 1
-LINE (x2, y2)-(x1 + 1, y2), 1
-
-LINE (x2, y1)-(x2 - 2, y1 + 2), 2
-LINE (x1, y2)-(x1 + 2, y2 - 2), 2
-
+'Outer ring, shaded top/left (3) and bottom/right (1), corners (2)
+gLine x1, y1, x2 - 1, y1, 3
+gPset x2, y1, 2
+gLine x1, y1 + 1, x1, y2 - 1, 3
+gPset x1, y2, 2
+gLine x2, y1 + 1, x2, y2, 1
+gLine x1 + 1, y2, x2 - 1, y2, 1
+'Middle ring
+gBox x1 + 1, y1 + 1, x2 - 1, y2 - 1, 2
+'Inner ring, with the shadow on the right and bottom
+gLine x1 + 2, y1 + 2, x2 - 3, y1 + 2, 1
+gPset x2 - 2, y1 + 2, 2
+gLine x1 + 2, y1 + 3, x1 + 2, y2 - 3, 1
+gPset x1 + 2, y2 - 2, 2
+gLine x2 - 2, y1 + 3, x2 - 2, y2 - 2, 3
+gLine x1 + 3, y2 - 2, x2 - 3, y2 - 2, 3
+'Client area
+IF x1 + 3 <= x2 - 3 AND y1 + 3 <= y2 - 3 THEN gFill x1 + 3, y1 + 3, x2 - 3, y2 - 3, 15
 
 END SUB
 
@@ -1078,13 +1104,15 @@ WinDrw text$, x, y, w, h, state, 1, 1, 1
 END SUB
 
 SUB WinDrwTtl (x1, y1, x2, y2)
-LINE (x1, y1)-(x2, y2), 6, BF
+gFill x1 + 1, y1 + 1, x2 - 1, y2 - 1, 6
+gPset x2, y1, 6
+gPset x1, y2, 6
 
-LINE (x1, y1)-(x2 - 1, y1), 7
-LINE (x1, y1)-(x1, y2 - 1), 7
+gLine x1, y1, x2 - 1, y1, 7
+gLine x1, y1 + 1, x1, y2 - 1, 7
 
-LINE (x2, y2)-(x1 + 1, y2), 5
-LINE (x2, y2)-(x2, y1 + 1), 5
+gLine x1 + 1, y2, x2, y2, 5
+gLine x2, y1 + 1, x2, y2 - 1, 5
 
 END SUB
 
@@ -1104,42 +1132,205 @@ WOrder(1) = num
 END SUB
 
 SUB WinPutTop (who)
-mouse.hide
 IF WOrder(1) <> who THEN
         WinMakeHighest who
-        WinUnDrw who
-        WinDrwMng who
+        WinRect who, x1, y1, x2, y2
+        RepaintChange x1, y1, x2, y2, x1, y1, x2, y2
+END IF
+END SUB
+
+'The rectangle a window covers, both ends included (screen coordinates).
+SUB WinRect (who, x1, y1, x2, y2)
+GetStats who, crap$, x, y, w, h, state
+x1 = x
+y1 = y
+x2 = x + w
+y2 = y + h
+END SUB
+
+'Move a window and paint only what changed.
+SUB WinMoveTo (who, nx, ny)
+WinRect who, ox1, oy1, ox2, oy2
+WGData(who, 1) = nx
+WGData(who, 2) = ny
+WinRect who, nx1, ny1, nx2, ny2
+RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+END SUB
+
+'Resize a window and paint only what changed.
+SUB WinSizeTo (who, nw, nh)
+WinRect who, ox1, oy1, ox2, oy2
+WGData(who, 3) = nw
+WGData(who, 4) = nh
+WinRect who, nx1, ny1, nx2, ny2
+RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+END SUB
+
+'Set the window state (0 rolled up, 1 normal, 2 maximised) and paint only what changed.
+SUB WinSetState (who, st)
+WinRect who, ox1, oy1, ox2, oy2
+WGData(who, 5) = st
+WinRect who, nx1, ny1, nx2, ny2
+RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+END SUB
+
+'Paint the area the old rectangle covered, then the part of the new rectangle
+'outside it. Every pixel is written once. The area they share is painted as part
+'of the old rectangle.
+SUB RepaintChange (ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2)
+mouse.hide
+WaitRetrace
+RepaintRect ox1, oy1, ox2, oy2
+'new minus old: a band above, a band below, then left and right of the overlap
+IF nx2 < ox1 OR nx1 > ox2 OR ny2 < oy1 OR ny1 > oy2 THEN
+        RepaintRect nx1, ny1, nx2, ny2
+ELSE
+        IF ny1 < oy1 THEN RepaintRect nx1, ny1, nx2, oy1 - 1
+        IF ny2 > oy2 THEN RepaintRect nx1, oy2 + 1, nx2, ny2
+        top = ny1: IF oy1 > top THEN top = oy1
+        bot = ny2: IF oy2 < bot THEN bot = oy2
+        IF nx1 < ox1 THEN RepaintRect nx1, top, ox1 - 1, bot
+        IF nx2 > ox2 THEN RepaintRect ox2 + 1, top, nx2, bot
 END IF
 mouse.show
 END SUB
 
-SUB WinUnDrw (who)
-GetStats who, crap$, x, y, w, h, state
-IF state <> 0 THEN height = h ELSE height = TtlHeight
-LINE (x, y)-(x + w, y + height), 4, BF
+'Paint a screen rectangle, both ends included, from the front window to the back.
+'Each window is drawn through a clip (VIEW SCREEN) on the part of the rectangle
+'that is still free, then that part is taken off the list. What is left at the
+'end is background. No pixel is written twice, so nothing is erased and redrawn.
+SUB RepaintRect (rx1, ry1, rx2, ry2)
+IF rx1 < 0 THEN rx1 = 0
+IF ry1 < 0 THEN ry1 = 0
+IF rx2 > 639 THEN rx2 = 639
+IF ry2 > 479 THEN ry2 = 479
+IF rx1 > rx2 OR ry1 > ry2 THEN EXIT SUB
 
-DIM ReDrawn(WNumber) AS INTEGER
+n = 1
+FreeRX1(1) = rx1: FreeRY1(1) = ry1: FreeRX2(1) = rx2: FreeRY2(1) = ry2
 
-ReDrawn(who) = 1
-
-FOR Cyc = WNumber TO 1 STEP -1
+FOR Cyc = 1 TO WNumber
+        IF n = 0 THEN EXIT FOR
         CW = WOrder(Cyc)
-        IF CW <> who THEN
-        GetStats CW, crap$, x, y, w, h, state
-
-        FOR TCW = 1 TO WNumber
-                       
-                GetStats TCW, crap$, tx, ty, tw, th, tstate
-
-                IF x + w >= tx AND x <= tx + tw AND y + h >= ty AND y <= ty + th AND TCW <> CW AND ReDrawn(TCW) THEN
-
-                ReDrawn(CW) = 1
-
-                WinDrwMng CW
-                EXIT FOR
+        WinRect CW, wx1, wy1, wx2, wy2
+        m = 0
+        FOR i = 1 TO n
+                ix1 = FreeRX1(i): IF wx1 > ix1 THEN ix1 = wx1
+                iy1 = FreeRY1(i): IF wy1 > iy1 THEN iy1 = wy1
+                ix2 = FreeRX2(i): IF wx2 < ix2 THEN ix2 = wx2
+                iy2 = FreeRY2(i): IF wy2 < iy2 THEN iy2 = wy2
+                IF ix1 > ix2 OR iy1 > iy2 THEN
+                        m = m + 1
+                        NextRX1(m) = FreeRX1(i): NextRY1(m) = FreeRY1(i): NextRX2(m) = FreeRX2(i): NextRY2(m) = FreeRY2(i)
+                ELSE
+                        ClipOn ix1, iy1, ix2, iy2
+                        WinDrwMng CW
+                        ClipOff
+                        IF FreeRY1(i) < iy1 THEN
+                                m = m + 1
+                                NextRX1(m) = FreeRX1(i): NextRY1(m) = FreeRY1(i): NextRX2(m) = FreeRX2(i): NextRY2(m) = iy1 - 1
+                        END IF
+                        IF iy2 < FreeRY2(i) THEN
+                                m = m + 1
+                                NextRX1(m) = FreeRX1(i): NextRY1(m) = iy2 + 1: NextRX2(m) = FreeRX2(i): NextRY2(m) = FreeRY2(i)
+                        END IF
+                        IF FreeRX1(i) < ix1 THEN
+                                m = m + 1
+                                NextRX1(m) = FreeRX1(i): NextRY1(m) = iy1: NextRX2(m) = ix1 - 1: NextRY2(m) = iy2
+                        END IF
+                        IF ix2 < FreeRX2(i) THEN
+                                m = m + 1
+                                NextRX1(m) = ix2 + 1: NextRY1(m) = iy1: NextRX2(m) = FreeRX2(i): NextRY2(m) = iy2
+                        END IF
                 END IF
-
         NEXT
-        END IF
+        n = m
+        FOR i = 1 TO n
+                FreeRX1(i) = NextRX1(i): FreeRY1(i) = NextRY1(i): FreeRX2(i) = NextRX2(i): FreeRY2(i) = NextRY2(i)
+        NEXT
+NEXT
+
+FOR i = 1 TO n
+        gFill FreeRX1(i), FreeRY1(i), FreeRX2(i), FreeRY2(i), 4
 NEXT
 END SUB
+
+'Clip all drawing to a screen rectangle. VIEW SCREEN raises error 5 when the
+'rectangle is one pixel thick (x1 = x2 or y1 = y2). Such a strip is clipped as a
+'two pixel one instead. The pixels of the padding are saved here and put back in
+'ClipOff.
+SUB ClipOn (x1, y1, x2, y2)
+px1 = x1: py1 = y1: px2 = x2: py2 = y2
+ClipCol = 0
+ClipRow = 0
+IF x1 = x2 THEN
+        IF x2 < 639 THEN px2 = x2 + 1 ELSE px1 = x1 - 1
+END IF
+IF y1 = y2 THEN
+        IF y2 < 479 THEN py2 = y2 + 1 ELSE py1 = y1 - 1
+END IF
+IF px1 <> x1 OR px2 <> x2 THEN
+        IF px1 <> x1 THEN ClipColX = px1 ELSE ClipColX = px2
+        ClipColY = py1
+        GET (ClipColX, py1)-(ClipColX, py2), ClipColBuf
+        ClipCol = 1
+END IF
+IF py1 <> y1 OR py2 <> y2 THEN
+        IF py1 <> y1 THEN ClipRowY = py1 ELSE ClipRowY = py2
+        ClipRowX = x1
+        GET (x1, ClipRowY)-(x2, ClipRowY), ClipRowBuf
+        ClipRow = 1
+END IF
+ClipLX1 = px1: ClipLY1 = py1: ClipLX2 = px2: ClipLY2 = py2
+ClipActive = -1
+gView px1, py1, px2, py2
+END SUB
+
+SUB ClipOff
+ClipActive = 0
+gViewOff
+IF ClipCol THEN PUT (ClipColX, ClipColY), ClipColBuf, PSET
+IF ClipRow THEN PUT (ClipRowX, ClipRowY), ClipRowBuf, PSET
+ClipCol = 0
+ClipRow = 0
+END SUB
+
+'Wait for the start of the vertical retrace, so a repaint starts right after the
+'monitor picked up the previous frame. Gives up after 50 ms in case the port
+'does not change (some emulators).
+SUB WaitRetrace
+t# = TIMER
+DO WHILE (INP(&H3DA) AND 8)
+        IF ABS(TIMER - t#) > .05 THEN EXIT SUB
+LOOP
+DO UNTIL (INP(&H3DA) AND 8)
+        IF ABS(TIMER - t#) > .05 THEN EXIT SUB
+LOOP
+END SUB
+
+'@@GFX-BEGIN
+'The only place that draws. The tests replace this block with a counting version.
+SUB gView (x1, y1, x2, y2)
+VIEW SCREEN (x1, y1)-(x2, y2)
+END SUB
+
+SUB gViewOff
+VIEW
+END SUB
+
+SUB gFill (x1, y1, x2, y2, c)
+LINE (x1, y1)-(x2, y2), c, BF
+END SUB
+
+SUB gBox (x1, y1, x2, y2, c)
+LINE (x1, y1)-(x2, y2), c, B
+END SUB
+
+SUB gLine (x1, y1, x2, y2, c)
+LINE (x1, y1)-(x2, y2), c
+END SUB
+
+SUB gPset (x, y, c)
+PSET (x, y), c
+END SUB
+'@@GFX-END

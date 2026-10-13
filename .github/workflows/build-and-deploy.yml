@@ -22,6 +22,8 @@ on:
 jobs:
   setup-build-deploy:
     name: Setup, Build, and Deploy
+    # The deploy needs the secrets of the original repository.
+    if: github.repository == 'meros/qbasic-snuggle-os'
     runs-on: ubuntu-latest
 
     steps:
