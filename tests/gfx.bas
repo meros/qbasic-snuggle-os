@@ -11,11 +11,15 @@ VIEW
 END SUB
 
 SUB gFill (x1, y1, x2, y2, c)
+IF Outside(x1, y1, x2, y2) THEN EXIT SUB
+gCalls = gCalls + 1
 gWrites = gWrites + CLNG(ClipSpan(x1, x2, gVX1, gVX2)) * ClipSpan(y1, y2, gVY1, gVY2)
 LINE (x1, y1)-(x2, y2), c, BF
 END SUB
 
 SUB gBox (x1, y1, x2, y2, c)
+IF Outside(x1, y1, x2, y2) THEN EXIT SUB
+gCalls = gCalls + 1
 n& = CLNG(ClipSpan(x1, x2, gVX1, gVX2)) * ClipSpan(y1, y2, gVY1, gVY2)
 IF x2 - x1 >= 2 AND y2 - y1 >= 2 THEN
         n& = n& - CLNG(ClipSpan(x1 + 1, x2 - 1, gVX1, gVX2)) * ClipSpan(y1 + 1, y2 - 1, gVY1, gVY2)
@@ -25,6 +29,8 @@ LINE (x1, y1)-(x2, y2), c, B
 END SUB
 
 SUB gLine (x1, y1, x2, y2, c)
+IF Outside(x1, y1, x2, y2) THEN EXIT SUB
+gCalls = gCalls + 1
 IF y1 = y2 THEN
         IF y1 >= gVY1 AND y1 <= gVY2 THEN gWrites = gWrites + ClipSpan(x1, x2, gVX1, gVX2)
 ELSEIF x1 = x2 THEN
@@ -36,7 +42,17 @@ END IF
 LINE (x1, y1)-(x2, y2), c
 END SUB
 
+SUB gCircle (x, y, r, c)
+IF Outside(x - r, y - r, x + r, y + r) THEN EXIT SUB
+gCalls = gCalls + 1
+gWrites = gWrites + 6 * r
+CIRCLE (x, y), r, c
+END SUB
+
 SUB gPset (x, y, c)
+IF Outside(x, y, x, y) THEN EXIT SUB
+gCalls = gCalls + 1
+gPsets = gPsets + 1
 IF x >= gVX1 AND x <= gVX2 AND y >= gVY1 AND y <= gVY2 THEN gWrites = gWrites + 1
 PSET (x, y), c
 END SUB

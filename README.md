@@ -52,11 +52,32 @@ changed pixel on a drag, against 2.9 to 4.9 for the 1999 code).
 - `ClipOn` and `ClipOff` set the clip. A clip one pixel thick is padded and
   restored, because `VIEW SCREEN` rejects it (error 5).
 
+## Controls
+
+A window can hold labels, buttons, checkboxes, radio buttons and text boxes.
+They are drawn in the window's client area as part of the window, so the
+clipped redraw handles overlap, moving and resizing for them. Mouse and keyboard
+work: a click on a button sets `CtlEvent`, a click on a text box gives it the
+keys (Backspace, Enter, Esc work; 40 characters at most).
+
+```basic
+w = WNumber                                   'the window
+name = CtlAdd(w, CtlText, 70, 4, 200, 22, "snuggle")   'x, y, w, h inside the client area
+ok = CtlAdd(w, CtlButton, 8, 140, 80, 26, "OK")
+CtlSetText name, "world"
+IF CtlEvent = ok THEN PRINT CtlGetText$(name)
+```
+
+`CtlAdd`, `CtlSetText`, `CtlGetText$`, `CtlSetChecked`, `CtlGetChecked`,
+`CtlSetFocus`, `CtlSelect` (radio groups), `CtlAt` (what is under a point).
+A control that does not fit inside the client area is not drawn.
+
 ## Tests
 
 ```sh
-scripts/test.sh            # smoke run, then 45 pixel comparisons and 6 write-count checks
-nix run .#test             # the same, with the tools from nixpkgs
+scripts/test.sh            # smoke run, then 58 pixel comparisons and 30 checks
+scripts/screenshot.sh      # PNG of the program after its first paint (build/screenshot.png)
+nix run .#test             # the tests, with the tools from nixpkgs
 ```
 
 QBasic 1.1 runs inside headless DOSBox 0.74 under a virtual X server. The
@@ -67,13 +88,18 @@ compares the dumps pixel by pixel on the host. A failing case writes
 idle machine. DOSBox sometimes crashes at start under Xvfb; the script runs the
 test again when that happens.
 
+The test build replaces the vendored mouse library with stubs. QBasic 1.1 does
+not start a program of about 55 KB of code (52.9 KB starts, 55.5 KB does not;
+comments do not count), and `SNUGGLE.BAS` plus the cases would pass that.
+
 ## Layout
 
 | Path | What |
 | --- | --- |
 | `SNUGGLE.BAS` | The program. `'@@RUN-BEGIN` and `'@@GFX-BEGIN` mark the parts the tests replace. |
 | `tests/` | Test cases, reference code, counting drawing layer, builder and verifier |
-| `scripts/test.sh` | Test runner |
+| `scripts/test.sh`, `scripts/dosbox-run.sh` | Test runner and the DOSBox launcher it shares |
+| `scripts/screenshot.sh` | Screenshot of the program, from a video memory dump |
 | `scripts/fetch-docs.sh` | Downloads QBasic reference pages into `docs/qbasic/` (not committed) |
 | `docs/APPS-AND-API.md` | How apps and an API could work |
 | `flake.nix`, `nix/` | `nix run` package and test app |

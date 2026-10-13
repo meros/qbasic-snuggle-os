@@ -25,6 +25,26 @@ DECLARE SUB RepaintChange (ox1%, oy1%, ox2%, oy2%, nx1%, ny1%, nx2%, ny2%)
 DECLARE SUB WaitRetrace ()
 DECLARE SUB ClipOn (x1%, y1%, x2%, y2%)
 DECLARE SUB ClipOff ()
+DECLARE FUNCTION CtlAdd% (win%, kind%, x%, y%, w%, h%, cap$)
+DECLARE SUB CtlReset ()
+DECLARE SUB CtlRect (id%, x1%, y1%, x2%, y2%)
+DECLARE FUNCTION CtlVisible% (id%)
+DECLARE SUB CtlDraw (id%)
+DECLARE SUB CtlDrawAll (who%)
+DECLARE SUB CtlRedraw (id%)
+DECLARE FUNCTION CtlHit% (who%, mx%, my%)
+DECLARE FUNCTION CtlAt% (mx%, my%)
+DECLARE SUB CtlActivate (id%)
+DECLARE SUB CtlSelect (id%)
+DECLARE SUB CtlTrack (id%)
+DECLARE SUB CtlKey (k$)
+DECLARE SUB CtlSetFocus (id%)
+DECLARE SUB CtlSetText (id%, t$)
+DECLARE FUNCTION CtlGetText$ (id%)
+DECLARE SUB CtlSetChecked (id%, v%)
+DECLARE FUNCTION CtlGetChecked% (id%)
+DECLARE SUB gCircle (x%, y%, r%, c%)
+DECLARE FUNCTION Outside% (x1%, y1%, x2%, y2%)
 DECLARE SUB gView (x1%, y1%, x2%, y2%)
 DECLARE SUB gViewOff ()
 DECLARE SUB gFill (x1%, y1%, x2%, y2%, c%)
@@ -51,8 +71,6 @@ DECLARE SUB mouse.hide ()
 DECLARE FUNCTION mouse.enable% ()
 DECLARE FUNCTION mouse.getbutton% ()
 DECLARE FUNCTION mouse.loadgcr$ (filename$)
-DECLARE FUNCTION mouse.loadTCR$ (filename$)
-DECLARE FUNCTION shift.getstate% ()
 DECLARE SUB WinDrwBrd (x1%, y1%, x2%, y2%)
 DECLARE SUB WinDrwTtl (x1%, y1%, x2%, y2%)
 '***************
@@ -65,8 +83,29 @@ CONST CTRL = &H4
 CONST ALT = &H8
 '***************
 CONST TtlHeight = 18
-DIM SHARED font(100, 8, 16) AS INTEGER
-DIM SHARED font2(155, 8, 16) AS INTEGER
+'Controls
+CONST CtlMax = 32
+CONST CtlLabel = 1
+CONST CtlButton = 2
+CONST CtlCheck = 3
+CONST CtlRadio = 4
+CONST CtlText = 5
+TYPE CtlRec
+        kind AS INTEGER         'CtlLabel .. CtlText
+        win AS INTEGER          'window that holds it
+        x AS INTEGER            'position inside the window's client area
+        y AS INTEGER
+        w AS INTEGER
+        h AS INTEGER
+        chk AS INTEGER          'checkbox and radio: 0 or 1
+        grp AS INTEGER          'radio buttons with the same window and group exclude each other
+        cap AS STRING * 40      'caption, or the text of a text box
+END TYPE
+DIM SHARED GlyphFirst(255) AS INTEGER   'glyph n is GlyphRuns(n) horizontal runs, from GlyphData(GlyphFirst(n))
+DIM SHARED GlyphRuns(255) AS INTEGER    'a run is packed as row * 64 + first column * 8 + last column
+DIM SHARED GlyphData(5000) AS INTEGER
+DIM SHARED GlyphBuf(40) AS INTEGER
+DIM SHARED GlyphTop AS INTEGER
 
 DIM SHARED WNMax AS INTEGER
 WNMax = 10
@@ -88,6 +127,11 @@ DIM SHARED ClipColY AS INTEGER
 DIM SHARED ClipRow AS INTEGER
 DIM SHARED ClipRowX AS INTEGER
 DIM SHARED ClipRowY AS INTEGER
+DIM SHARED Ctl(CtlMax) AS CtlRec
+DIM SHARED CtlCount AS INTEGER
+DIM SHARED CtlFocus AS INTEGER          'text box that receives the keys, 0 for none
+DIM SHARED CtlDown AS INTEGER           'button that is held down, 0 for none
+DIM SHARED CtlEvent AS INTEGER          'control that was clicked or accepted, 0 for none
 DIM SHARED ClipActive AS INTEGER        'cout skips glyphs outside the clip
 DIM SHARED ClipLX1 AS INTEGER
 DIM SHARED ClipLY1 AS INTEGER
@@ -122,6 +166,18 @@ CLS
 NewWin "Alfa", 90, 90, 300, 70
 NewWin "Beta", 100, 100, 300, 70
 NewWin "Welcome to the future", 120, 120, 300, 100
+NewWin "Controls", 330, 40, 290, 230
+cw0 = WNumber
+cName = CtlAdd(cw0, CtlText, 70, 4, 200, 22, "snuggle")
+cLabel = CtlAdd(cw0, CtlLabel, 8, 6, 60, 16, "Name:")
+cSound = CtlAdd(cw0, CtlCheck, 8, 38, 170, 16, "Enable sound")
+cRed = CtlAdd(cw0, CtlRadio, 8, 64, 100, 16, "Red")
+cGreen = CtlAdd(cw0, CtlRadio, 8, 84, 100, 16, "Green")
+cBlue = CtlAdd(cw0, CtlRadio, 8, 104, 100, 16, "Blue")
+cOk = CtlAdd(cw0, CtlButton, 8, 140, 80, 26, "OK")
+cClear = CtlAdd(cw0, CtlButton, 100, 140, 80, 26, "Clear")
+cStatus = CtlAdd(cw0, CtlLabel, 8, 178, 262, 16, "Ready")
+CtlSetChecked cRed, 1
 refresh
 
 DO
@@ -144,6 +200,7 @@ GetStats CW, crap$, wx, wy, ww, wh, wstate
                 EXIT FOR
         END IF
         IF CheckIfTitle(CW) THEN
+                CtlSetFocus 0
                 WinPutTop CW
                 IF wstate <> 2 THEN StartDrag CW
                 EXIT FOR
@@ -157,16 +214,38 @@ GetStats CW, crap$, wx, wy, ww, wh, wstate
         END IF
         NEXT
         IF Ext = 1 THEN EXIT FOR
+        mouse.getpos cmx, cmy
+        cid = CtlHit(CW, cmx, cmy)
+        IF cid > 0 THEN
+                WinPutTop CW
+                CtlTrack cid
+                EXIT FOR
+        END IF
         IF CheckIfWinArea(CW) THEN
+                CtlSetFocus 0
                 DO: LOOP WHILE mouse.getbutton = LB
                 WinPutTop CW
                 EXIT FOR
         END IF
 NEXT
 END IF
-k$ = UCASE$(INKEY$)
-IF k$ = "R" THEN refresh
-LOOP UNTIL k$ = "Q"
+k$ = INKEY$
+IF CtlFocus <> 0 THEN
+        CtlKey k$
+        k$ = ""
+END IF
+IF CtlEvent <> 0 THEN
+        SELECT CASE CtlEvent
+        CASE cOk
+                CtlSetText cStatus, "Hello, " + CtlGetText$(cName)
+        CASE cClear
+                CtlSetText cName, ""
+                CtlSetText cStatus, "Ready"
+        END SELECT
+        CtlEvent = 0
+END IF
+IF UCASE$(k$) = "R" THEN refresh
+LOOP UNTIL UCASE$(k$) = "Q"
 '@@RUN-END
 
 FUNCTION CheckIfBorder (what, who)
@@ -249,17 +328,21 @@ FOR Char = 1 TO LEN(text$)
                 vis = -1
         END IF
         IF vis THEN
-        FOR y = 1 TO 16
-                FOR x = 1 TO 8
-                        IF num > 100 THEN col = font2(num - 100, x, y) ELSE col = font(num, x, y)
-                        IF col = 1 THEN gPset sx + (x - 1) + (RowChar - 1) * 8, sy + y, colo
+                k = GlyphFirst(num)
+                FOR n = 1 TO GlyphRuns(num)
+                        v = GlyphData(k)
+                        k = k + 1
+                        ry = sy + 1 + v \ 64
+                        gLine gx + ((v \ 8) AND 7), ry, gx + (v AND 7), ry, colo
                 NEXT
-        NEXT
         END IF
 NEXT
 stopthis:
 END SUB
 
+'Read the 8 x 16 glyph of every character from the screen font into runs. The
+'glyph is printed in colour 1 (one bit plane), read back with GET, and each row
+'of the plane is cut into runs of set pixels.
 SUB CoutSetup
 COLOR 1
 OUT &H3C8, 1
@@ -267,20 +350,36 @@ OUT &H3C9, 0
 OUT &H3C9, 0
 OUT &H3C9, 0
 
+GlyphTop = 0
 FOR a = 15 TO 255
-LOCATE 1, 1
-PRINT CHR$(a)
-FOR y = 0 TO 15
-FOR x = 0 TO 7
-pnt = POINT(x, y)
-IF pnt <> 0 THEN pnt = 1
-IF a <= 100 THEN
-font(a, x + 1, y + 1) = pnt
-ELSE
-font2(a - 100, x + 1, y + 1) = pnt
-END IF
-NEXT
-NEXT
+        LOCATE 1, 1
+        PRINT CHR$(a)
+        GET (0, 0)-(7, 15), GlyphBuf
+        GlyphFirst(a) = GlyphTop
+        FOR r = 0 TO 15
+                m = GlyphBuf(2 + r * 2) AND &HFF
+                IF m <> 0 THEN
+                        bit = 128
+                        x0 = -1
+                        FOR x = 0 TO 7
+                                IF (m AND bit) <> 0 THEN
+                                        IF x0 < 0 THEN x0 = x
+                                ELSE
+                                        IF x0 >= 0 THEN
+                                                GlyphData(GlyphTop) = r * 64 + x0 * 8 + x - 1
+                                                GlyphTop = GlyphTop + 1
+                                                x0 = -1
+                                        END IF
+                                END IF
+                                bit = bit \ 2
+                        NEXT
+                        IF x0 >= 0 THEN
+                                GlyphData(GlyphTop) = r * 64 + x0 * 8 + 7
+                                GlyphTop = GlyphTop + 1
+                        END IF
+                END IF
+        NEXT
+        GlyphRuns(a) = GlyphTop - GlyphFirst(a)
 NEXT
 
 END SUB
@@ -372,20 +471,7 @@ gLine x + 3, y + 6, x + 9, y + 6, 6
 gBox x + 2, y + 5, x + 10, y + 7, 1
 END SUB
 
-'Disable mouse.
-'EXAMPLE:
-'  enabled% = mouse.enable  'enable mouse
-'  mouse.show               'show mouse
-'  a$ = INPUT$(1)           'pause
-'  mouse.disable            'disable mouse
-SUB mouse.disable
-  SHARED mouse.exist AS INTEGER
-  IF mouse.exist THEN
-    mouse.hide
-    mouse.exist = 0
-  END IF
-END SUB
-
+'@@MOUSE-BEGIN
 'Enable mouse for usage. Must be run before any mouse functions (other than
 'cursor-loading functions) or none will work.
 'RETURN:
@@ -442,44 +528,6 @@ FUNCTION mouse.enable%
   mouse.enable = mouse.exist
 END FUNCTION
 
-'Gets mouse status (coordinates and button status.)
-'COMMENT:
-'* Coordinates are in pixels, even if the screen is in text mode.
-'INPUT:
-'* x% = integer variable to store x coordinate
-'* y% = integer variable to store y coordinate
-'* buttons% = integer variable to store buttons status where:
-'  * buttons% becomes LB if left button is pressed
-'  * buttons% becomes RB if right button is pressed
-'  * buttons% becomes CB if center buttons is pressed
-'  * or combination (left button and right button makes buttons% = LB + RB)
-'    including double clicks (ie - LB + DC).
-'* LB, RB, and CB are mouse constants found in the main module.
-'EXAMPLE:
-'  CLS
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    mouse.get x%, y%, buttons%
-'    LOCATE 1, 1: PRINT USING "####  ####  ####"; x%; y%; buttons%
-'  LOOP WHILE INKEY$ = ""
-'  mouse.disable
-SUB mouse.get (x%, y%, buttons%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H3, bx%, x%, y%, 0, mouse.asmoff%)
-    DEF SEG
-  END IF
-  buttons% = 0
-  IF bx% AND &H1 THEN buttons% = buttons% OR LB
-  IF bx% AND &H2 THEN buttons% = buttons% OR RB
-  IF bx% AND &H4 THEN buttons% = buttons% OR CB
-END SUB
-
 'Gets the status of mouse buttons.
 'COMMENT:
 '* Using mouse.get() function is recommended instead when using both
@@ -519,113 +567,6 @@ FUNCTION mouse.getbutton%
   IF bx% AND &H4 THEN ret% = ret% OR CB
   mouse.getbutton% = ret%
 END FUNCTION
-
-'Gets the last coordinate where a mouse button was pressed
-'COMMENT:
-'* Coordinates are in pixels, even if the screen is in text mode.
-'INPUT:
-'* mouse.constant% is a mouse constant of LB (left button), RB (right
-'  button), or CB (center button) for button press check. No combination
-'  allowed. Any values other than LB, RB, and CB will default to LB.
-'* x% and y% are the variables to store x and y corrdinates where the mouse
-'  button was pressed.
-'EXAMPLE:
-'  CLS
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    mouse.getlastdown LB, x%, y%
-'    LOCATE 1, 1: PRINT USING "####  ####"; x%; y%
-'  LOOP WHILE INKEY$ = ""
-'  mouse.disable
-SUB mouse.getlastdown (mouse.constant%, x%, y%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    SELECT CASE mouse.constant%
-      CASE LB: Button% = 0
-      CASE RB: Button% = 1
-      CASE CB: Button% = 2
-      CASE ELSE: Button% = 0
-    END SELECT
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H5, Button%, cx%, dx%, 0, mouse.asmoff%)
-    DEF SEG
-    x% = cx%
-    y% = dx%
-  END IF
-END SUB
-
-'Gets the last coordinate where a mouse button was released
-'COMMENT:
-'* Coordinates are in pixels, even if the screen is in text mode.
-'INPUT:
-'* mouse.constant% is a mouse constant of LB (left button), RB (right
-'  button), or CB (center button) for button release check. No combination
-'  allowed.
-'* x% and y% are the variables to store x and y corrdinates where the mouse
-'  button was released.
-'EXAMPLE:
-'  CLS
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    mouse.getlastup LB, x%, y%
-'    LOCATE 1, 1: PRINT USING "####  ####"; x%; y%
-'  LOOP WHILE INKEY$ = ""
-'  mouse.disable
-SUB mouse.getlastup (mouse.constant%, x%, y%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    SELECT CASE mouse.constant%
-      CASE LB: Button% = 0
-      CASE RB: Button% = 1
-      CASE CB: Button% = 2
-      CASE ELSE: Button% = 0
-    END SELECT
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H6, Button%, cx%, dx%, 0, mouse.asmoff%)
-    DEF SEG
-    x% = cx%
-    y% = dx%
-  END IF
-END SUB
-
-'Gets the movement of the mouse since last call
-'COMMENT:
-'* Coordinates are in pixels, even if the screen is in text mode.
-'INPUT:
-'* x% and y% are variables to store the horizontal and vertical movements,
-'  respectively.
-'* Right and Down are positives, Left and Up are negatives
-'EXAMPLE:
-'  CLS
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    mouse.getmovement x%, y%
-'    LOCATE 1, 1: PRINT USING "####  ####"; x%; y%
-'    SLEEP 1
-'  LOOP WHILE INKEY$ = ""
-'  mouse.disable
-SUB mouse.getmovement (x%, y%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &HB, 0, cx%, dx%, 0, mouse.asmoff%)
-    DEF SEG
-    x% = cx%
-    y% = dx%
-  END IF
-END SUB
 
 'Gets mouse coordinates.
 'COMMENT:
@@ -710,35 +651,6 @@ FUNCTION mouse.loadgcr$ (filename$)
   mouse.loadgcr$ = strn$
 END FUNCTION
 
-'Loads the text cursor
-'COMMENT:
-'* Requies MS Mouse driver version 3.0 or compatible
-'INPUT:
-'* filename$ is the file name to input the graphics cursor's data from.
-'* If filename$ has no extention, it defaults to .TCR (Text CuRsor) extention.
-'RETURN:
-'* Returns the text cursor data in the string form.
-'EXAMPLE:
-'  enabled% = mouse.enable
-'  mouse.show
-'  data$ = mouse.loadTCR$("cursor.tcr")
-'  mouse.setTCR data$
-FUNCTION mouse.loadTCR$ (filename$)
-  IF INSTR(filename$, ".") = 0 THEN filename$ = filename$ + ".TCR"
- 
-  filenumber% = FREEFILE
-  OPEN filename$ FOR BINARY AS filenumber%
-    strn$ = SPACE$(3)
-    GET #filenumber%, 1, strn$
-    IF strn$ = "TCR" THEN
-      strn$ = SPACE$(8)
-      GET #filenumber%, 1, strn$
-    ELSE strn$ = ""
-    END IF
-  CLOSE filenumber%
-  mouse.loadTCR$ = strn$
-END FUNCTION
-
 'Changes the graphics cursor
 'COMMENT:
 '* Requies MS Mouse driver version 3.0 or compatible
@@ -777,150 +689,6 @@ SUB mouse.setgcr (data$)
   END IF
 END SUB
 
-'Sets a "boxed" area for the mouse to move around. It cannot go beyond.
-'COMMENT:
-'* Coordinates are in pixels, even if the screen is in text mode.
-'INPUT:
-'* (x1%, y1%) is the top-left coordinate of the box.
-'* (x2%, y2%) is the bottom-right coordinate of the box.
-'EXAMPLE:
-'  enabled% = mouse.enable
-'  mouse.show
-'  mouse.setlimit 50, 50, 300, 100
-'  a$ = INPUT$(1)  'wait for a key
-'  mouse.disable
-SUB mouse.setlimit (x1%, y1%, x2%, y2%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    cx% = x1%
-    dx% = x2%
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H7, 0, cx%, dx%, 0, mouse.asmoff%)
-    DEF SEG
-    cx% = y1%
-    dx% = y2%
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H8, 0, cx%, dx%, 0, mouse.asmoff%)
-    DEF SEG
-  END IF
-END SUB
-
-'Moves the mouse position to (x%, y%)
-'COMMENT:
-'* Coordinates are in pixels, even if the screen is in text mode.
-'NOTES:
-'* The inputted values, x% and y%, must be in "pixels", not in "blocks", even
-'  in text mode.
-'EXAMPLE:
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    mouse.setpos 100, 100
-'    SLEEP 1
-'  LOOP WHILE INKEY$ = ""
-'  mouse.disable
-SUB mouse.setpos (x%, y%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    cx% = x%
-    dx% = y%
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H4, 0, cx%, dx%, 0, mouse.asmoff%)
-    DEF SEG
-  END IF
-END SUB
-
-'Changes the mouse speed
-'COMMENT:
-'* This interrupt service actually sets the ratio between mickey (the small-
-'  est movement the mouse can detect) and the pixels.  This function does
-'  some calculations to make it simulate a speed setting interrupt service.
-'   There is aactually a speed setting interrupt service, but it is available
-'  to MS Mouse Driver version 6.0 and compatibles so I didn't want to do
-'  that.  All the functions in this QBASIC functions are MS Mouse Driver ver-
-'  sion 1.0 and compatible with the exception of graphics cursor setting
-'  functions and text cursor setting functions.
-'INPUT:
-'* x% is the new horizontal mouse speed
-'* y% is the new vertical mouse speed
-'* The minimum value is -32,768 (go backwards) and the maximum value is
-'  32,767, same as the minimum and the maximum value limit of integers.
-'EXAMPLE:
-'  enabled% = mouse.enable
-'  mouse.show
-'  mouse.setspeed &H7FFF, &H7FFF
-'  a$ = INPUT$(1)  'wait for a key
-'  mouse.disable
-SUB mouse.setspeed (x%, y%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &HF, 0, (x% XOR &H7FFF), (y% XOR &H7FFF), 0, mouse.asmoff%)
-    DEF SEG
-  END IF
-END SUB
-
-'Changes the text cursor
-'COMMENT:
-'* Requies MS Mouse driver version 3.0 or compatible
-'INPUT:
-'* data$ is the text cursor data gotten from a file using the function
-'  mouse.loadTCR().
-'EXAMPLE:
-'  enabled% = mouse.enable
-'  mouse.show
-'  data$ = mouse.loadTCR$("cursor.tcr")
-'  mouse.setTCR data$
-SUB mouse.setTCR (data$)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
- 
-  IF NOT (mouse.exist AND LEN(data$) = 8 AND LEFT$(data$, 3) = "TCR") THEN EXIT SUB
- 
-  'get cursor type value
-  cursortype$ = MID$(data$, 4, 1)
-  DEF SEG = VARSEG(cursortype$)
-  bx% = PEEK(SADD(cursortype$))
-  DEF SEG
-  'get arg1 value
-  arg1h$ = MID$(data$, 5, 1)
-  DEF SEG = VARSEG(arg1h$)
-  argh% = PEEK(SADD(arg1h$))
-  DEF SEG
-  arg1l$ = MID$(data$, 6, 1)
-  DEF SEG = VARSEG(arg1l$)
-  argl% = PEEK(SADD(arg1l$))
-  DEF SEG
-  cx% = (argh% AND &H7F) * &H100 + argl%
-   IF argh% AND &H80 THEN cx% = cx% OR &H8000
-  'get arg2 value
-  arg2h$ = MID$(data$, 7, 1)
-  DEF SEG = VARSEG(arg2h$)
-  argh% = PEEK(SADD(arg2h$))
-  DEF SEG
-  arg2l$ = MID$(data$, 8, 1)
-  DEF SEG = VARSEG(arg2l$)
-  argl% = PEEK(SADD(arg2l$))
-  DEF SEG
-  dx% = (argh% AND &H7F) * &H100 + argl%
-   IF argh% AND &H80 THEN dx% = dx% OR &H8000
-  'execute
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  DEF SEG = mouse.asmseg%
-  CALL absolute(dummy%, dummy%, dummy%, dummy%, &HA, bx%, cx%, dx%, 0, mouse.asmoff%)
-  DEF SEG
-END SUB
-
 'Shows the mouse. Must have been enabled first.
 'EXAMPLE:
 '  enabled% = mouse.enable  'enable mouse
@@ -940,6 +708,7 @@ SUB mouse.show
     mouse.visible = 1
   END IF
 END SUB
+'@@MOUSE-END
 
 SUB NewWin (text$, x, y, w, h)
 WNumber = WNumber + 1
@@ -968,40 +737,6 @@ mouse.hide
 RepaintRect 0, 0, 639, 479
 mouse.show
 END SUB
-
-'Gets shift state.
-'RETURN:
-'* 0 if no shift key pressed
-'* ALT if Alt key pressed
-'* CTRL if Ctrl key pressed
-'* SHIFT if Shift key pressed
-'* These may be in combination.  For example, if Ctrl-Alt is pressed, then
-'  return is CTRL + ALT.
-'* ALT, CTRL, and SHIFT are shift constants defined in the main module.
-'EXAMPLE:
-'  CLS
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    mouse.get x%, y%, buttons%
-'    shiftstate% = shift.getstate%
-'    IF buttons% THEN
-'      LOCATE 1, 1: PRINT SPACE$(79); : LOCATE 1, 1
-'      SELECT CASE shiftstate%
-'        CASE 0: PRINT "Mouse button was pressed without any shift keys."
-'        CASE ALT: PRINT "Mouse button and Alt key pressed."
-'        CASE CTRL: PRINT "Mouse button and Ctrl key pressed."
-'        CASE SHIFT: PRINT "Mouse button and Shift key pressed."
-'      END SELECT
-'    END IF
-'  LOOP WHILE INKEY$ = ""
-FUNCTION shift.getstate%
-  DEF SEG = 0
-  state% = PEEK(&H417) AND &HF
-  DEF SEG
-  IF (state% AND &H3) THEN state% = (state% OR &H3)
-  shift.getstate% = state%
-END FUNCTION
 
 SUB StartDrag (who)
 mouse.setgcr move
@@ -1055,8 +790,8 @@ StringFind = a
 END FUNCTION
 
 SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
-       
-        WinDrwTtl x, y, x + w, y + TtlHeight
+        IF NOT Outside(x, y, x + w, y + TtlHeight) THEN
+                WinDrwTtl x, y, x + w, y + TtlHeight
                 Lengh = w - TtlHeight * 3 - 2 - 5
                 CharsVis = (Lengh - (Lenght MOD 8)) / 8
                 print$ = MID$(text$, 1, CharsVis)
@@ -1070,10 +805,10 @@ SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
                 MinButton x + w - TtlHeight * 3, y + 3
                 MaxButton x + w - TtlHeight * 2, y + 3
                 QuitButton x + w - TtlHeight * 1, y + 3
-        IF state <> 0 THEN WinDrwBrd x, y + TtlHeight + 1, x + w, y + h
-
-       
-
+        END IF
+        IF state <> 0 THEN
+                IF NOT Outside(x, y + TtlHeight + 1, x + w, y + h) THEN WinDrwBrd x, y + TtlHeight + 1, x + w, y + h
+        END IF
 END SUB
 
 SUB WinDrwBrd (x1, y1, x2, y2)
@@ -1101,6 +836,7 @@ END SUB
 SUB WinDrwMng (who)
 GetStats who, text$, x, y, w, h, state
 WinDrw text$, x, y, w, h, state, 1, 1, 1
+IF state <> 0 THEN CtlDrawAll who
 END SUB
 
 SUB WinDrwTtl (x1, y1, x2, y2)
@@ -1308,6 +1044,23 @@ DO UNTIL (INP(&H3DA) AND 8)
 LOOP
 END SUB
 
+'-1 when a rectangle (or the bounding box of a line) lies completely outside the
+'clip, or outside the screen when no clip is set. The drawing layer skips such
+'calls: QBasic's LINE leaves a stray pixel in the bottom left corner of the view
+'for a box that is entirely below and left of it.
+FUNCTION Outside (x1, y1, x2, y2)
+IF ClipActive THEN
+        l = ClipLX1: t = ClipLY1: r = ClipLX2: b = ClipLY2
+ELSE
+        l = 0: t = 0: r = 639: b = 479
+END IF
+xl = x1: xh = x2
+IF xl > xh THEN xl = x2: xh = x1
+yl = y1: yh = y2
+IF yl > yh THEN yl = y2: yh = y1
+Outside = (xh < l OR xl > r OR yh < t OR yl > b)
+END FUNCTION
+
 '@@GFX-BEGIN
 'The only place that draws. The tests replace this block with a counting version.
 SUB gView (x1, y1, x2, y2)
@@ -1319,18 +1072,309 @@ VIEW
 END SUB
 
 SUB gFill (x1, y1, x2, y2, c)
+IF Outside(x1, y1, x2, y2) THEN EXIT SUB
 LINE (x1, y1)-(x2, y2), c, BF
 END SUB
 
 SUB gBox (x1, y1, x2, y2, c)
+IF Outside(x1, y1, x2, y2) THEN EXIT SUB
 LINE (x1, y1)-(x2, y2), c, B
 END SUB
 
 SUB gLine (x1, y1, x2, y2, c)
+IF Outside(x1, y1, x2, y2) THEN EXIT SUB
 LINE (x1, y1)-(x2, y2), c
 END SUB
 
 SUB gPset (x, y, c)
+IF Outside(x, y, x, y) THEN EXIT SUB
 PSET (x, y), c
 END SUB
+
+SUB gCircle (x, y, r, c)
+IF Outside(x - r, y - r, x + r, y + r) THEN EXIT SUB
+CIRCLE (x, y), r, c
+END SUB
 '@@GFX-END
+
+'---------------------------------------------------------------------------
+'Controls. A control belongs to a window and is drawn in its client area, after
+'the frame, so it is repainted (and clipped) with the window. A control that
+'does not fit inside the client area is not drawn and cannot be hit.
+'Events are not callbacks: a click or an accepted text box sets CtlEvent to the
+'control number, and the main loop reads it.
+'---------------------------------------------------------------------------
+
+'Add a control and return its number (0 when the table is full).
+'x, y, w, h are relative to the top left of the client area.
+FUNCTION CtlAdd (win, kind, x, y, w, h, cap$)
+IF CtlCount >= CtlMax THEN
+        CtlAdd = 0
+        EXIT FUNCTION
+END IF
+CtlCount = CtlCount + 1
+Ctl(CtlCount).kind = kind
+Ctl(CtlCount).win = win
+Ctl(CtlCount).x = x
+Ctl(CtlCount).y = y
+Ctl(CtlCount).w = w
+Ctl(CtlCount).h = h
+Ctl(CtlCount).chk = 0
+Ctl(CtlCount).grp = 1
+Ctl(CtlCount).cap = cap$
+CtlAdd = CtlCount
+END FUNCTION
+
+'Remove all controls.
+SUB CtlReset
+CtlCount = 0
+CtlFocus = 0
+CtlDown = 0
+CtlEvent = 0
+END SUB
+
+'The screen rectangle of a control, both ends included.
+SUB CtlRect (id, x1, y1, x2, y2)
+WinRect Ctl(id).win, wx1, wy1, wx2, wy2
+x1 = wx1 + 3 + Ctl(id).x
+y1 = wy1 + TtlHeight + 4 + Ctl(id).y
+x2 = x1 + Ctl(id).w - 1
+y2 = y1 + Ctl(id).h - 1
+END SUB
+
+'-1 when the control is drawn: its window is not rolled up and the whole
+'control is inside the client area.
+FUNCTION CtlVisible (id)
+CtlVisible = 0
+GetStats Ctl(id).win, crap$, x, y, w, h, state
+IF state = 0 THEN EXIT FUNCTION
+CtlRect id, x1, y1, x2, y2
+IF x1 >= x + 3 AND y1 >= y + TtlHeight + 4 AND x2 <= x + w - 3 AND y2 <= y + h - 3 THEN CtlVisible = -1
+END FUNCTION
+
+SUB CtlDraw (id)
+CtlRect id, x1, y1, x2, y2
+w = Ctl(id).w
+h = Ctl(id).h
+cap$ = RTRIM$(Ctl(id).cap)
+SELECT CASE Ctl(id).kind
+CASE CtlLabel
+        cout cap$, x1, y1 + (h - 16) \ 2, 0, w, 0
+CASE CtlButton
+        nudge = 0
+        IF CtlDown = id THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
+        gFill x1 + 2, y1 + 2, x2 - 2, y2 - 2, 3
+        gLine x1 + 1, y1 + 1, x2 - 2, y1 + 1, hi
+        gLine x1 + 1, y1 + 2, x1 + 1, y2 - 2, hi
+        gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
+        gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
+        gBox x1, y1, x2, y2, 1
+        tw = LEN(cap$) * 8
+        cout cap$, x1 + (w - tw) \ 2 + nudge, y1 + (h - 16) \ 2 + nudge, 0, w, 0
+CASE CtlCheck
+        bx = y1 + (h - 13) \ 2
+        gBox x1, bx, x1 + 12, bx + 12, 1
+        gFill x1 + 1, bx + 1, x1 + 11, bx + 11, 15
+        IF Ctl(id).chk THEN
+                gLine x1 + 3, bx + 3, x1 + 9, bx + 9, 0
+                gLine x1 + 3, bx + 4, x1 + 8, bx + 9, 0
+                gLine x1 + 9, bx + 3, x1 + 3, bx + 9, 0
+                gLine x1 + 9, bx + 4, x1 + 4, bx + 9, 0
+        END IF
+        cout cap$, x1 + 20, y1 + (h - 16) \ 2, 0, w - 20, 0
+CASE CtlRadio
+        cx = x1 + 6
+        cy = y1 + h \ 2
+        gFill cx - 6, cy - 6, cx + 6, cy + 6, 15
+        gCircle cx, cy, 6, 1
+        IF Ctl(id).chk THEN gFill cx - 2, cy - 2, cx + 2, cy + 2, 0
+        cout cap$, x1 + 20, y1 + (h - 16) \ 2, 0, w - 20, 0
+CASE CtlText
+        IF CtlFocus = id THEN bc = 7 ELSE bc = 1
+        gBox x1, y1, x2, y2, bc
+        gFill x1 + 1, y1 + 1, x2 - 1, y2 - 1, 15
+        n = (w - 8) \ 8
+        shown$ = cap$
+        IF LEN(shown$) > n THEN shown$ = RIGHT$(shown$, n)
+        cout shown$, x1 + 4, y1 + (h - 16) \ 2, 0, w - 8, 0
+        IF CtlFocus = id THEN
+                cx = x1 + 4 + LEN(shown$) * 8
+                gLine cx, y1 + 3, cx, y2 - 3, 0
+        END IF
+END SELECT
+END SUB
+
+'Draw the controls of one window, in the order they were added. A control
+'outside the clip, or not entirely inside the client area, is not drawn.
+SUB CtlDrawAll (who)
+IF CtlCount = 0 THEN EXIT SUB
+GetStats who, crap$, x, y, w, h, state
+IF state = 0 THEN EXIT SUB
+ox = x + 3
+oy = y + TtlHeight + 4
+FOR i = 1 TO CtlCount
+        IF Ctl(i).win = who THEN
+                x1 = ox + Ctl(i).x
+                y1 = oy + Ctl(i).y
+                x2 = x1 + Ctl(i).w - 1
+                y2 = y1 + Ctl(i).h - 1
+                IF x1 >= ox AND y1 >= oy AND x2 <= x + w - 3 AND y2 <= y + h - 3 THEN
+                        IF NOT Outside(x1, y1, x2, y2) THEN CtlDraw i
+                END IF
+        END IF
+NEXT
+END SUB
+
+'Repaint one control (and whatever covers part of it) after its state changed.
+SUB CtlRedraw (id)
+IF id < 1 OR id > CtlCount THEN EXIT SUB
+IF NOT CtlVisible(id) THEN EXIT SUB
+CtlRect id, x1, y1, x2, y2
+RepaintChange x1, y1, x2, y2, x1, y1, x2, y2
+END SUB
+
+'The control that takes a click at a screen point in this window, 0 for none.
+'Labels do not take clicks. Later controls are on top of earlier ones.
+FUNCTION CtlHit (who, mx, my)
+CtlHit = 0
+FOR i = CtlCount TO 1 STEP -1
+        IF Ctl(i).win = who AND Ctl(i).kind <> CtlLabel THEN
+                IF CtlVisible(i) THEN
+                        CtlRect i, x1, y1, x2, y2
+                        IF mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2 THEN
+                                CtlHit = i
+                                EXIT FUNCTION
+                        END IF
+                END IF
+        END IF
+NEXT
+END FUNCTION
+
+'The control under a screen point, looking through the windows front to back.
+'A window covers the controls of the windows behind it.
+FUNCTION CtlAt (mx, my)
+CtlAt = 0
+FOR Cyc = 1 TO WNumber
+        CW = WOrder(Cyc)
+        WinRect CW, x1, y1, x2, y2
+        IF mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2 THEN
+                CtlAt = CtlHit(CW, mx, my)
+                EXIT FUNCTION
+        END IF
+NEXT
+END FUNCTION
+
+'Give the keys to a text box, or to nobody (0).
+SUB CtlSetFocus (id)
+old = CtlFocus
+IF old = id THEN EXIT SUB
+CtlFocus = id
+IF old > 0 THEN CtlRedraw old
+IF id > 0 THEN CtlRedraw id
+END SUB
+
+'Select one radio button of its group.
+SUB CtlSelect (id)
+FOR i = 1 TO CtlCount
+        IF i <> id AND Ctl(i).kind = CtlRadio AND Ctl(i).win = Ctl(id).win AND Ctl(i).grp = Ctl(id).grp THEN
+                IF Ctl(i).chk <> 0 THEN
+                        Ctl(i).chk = 0
+                        CtlRedraw i
+                END IF
+        END IF
+NEXT
+IF Ctl(id).chk = 0 THEN
+        Ctl(id).chk = 1
+        CtlRedraw id
+END IF
+END SUB
+
+'What a click on a control does, after the button went up on it.
+SUB CtlActivate (id)
+SELECT CASE Ctl(id).kind
+CASE CtlButton
+        CtlEvent = id
+CASE CtlCheck
+        IF Ctl(id).chk THEN Ctl(id).chk = 0 ELSE Ctl(id).chk = 1
+        CtlRedraw id
+        CtlEvent = id
+CASE CtlRadio
+        CtlSelect id
+        CtlEvent = id
+CASE CtlText
+        CtlSetFocus id
+END SELECT
+END SUB
+
+'Follow the mouse until the button goes up. A button looks pressed while the
+'pointer is on it; the click counts when the button goes up on it.
+SUB CtlTrack (id)
+IF Ctl(id).kind = CtlButton THEN
+        CtlDown = id
+        CtlRedraw id
+        isin = -1
+        CtlRect id, x1, y1, x2, y2
+        DO
+                mouse.getpos mx, my
+                over = (mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2)
+                IF over <> isin THEN
+                        isin = over
+                        IF isin THEN CtlDown = id ELSE CtlDown = 0
+                        CtlRedraw id
+                END IF
+        LOOP WHILE mouse.getbutton = LB
+        CtlDown = 0
+        CtlRedraw id
+        IF isin THEN CtlActivate id
+ELSE
+        DO: LOOP WHILE mouse.getbutton = LB
+        CtlActivate id
+END IF
+END SUB
+
+'A key for the focused text box. Printable keys are added (40 characters at
+'most), Backspace removes one, Enter accepts (CtlEvent), Esc leaves the box.
+'The caption is stored in a fixed string, so trailing spaces are not kept.
+SUB CtlKey (k$)
+id = CtlFocus
+IF id = 0 OR LEN(k$) <> 1 THEN EXIT SUB
+IF Ctl(id).kind <> CtlText THEN EXIT SUB
+c = ASC(k$)
+cur$ = RTRIM$(Ctl(id).cap)
+SELECT CASE c
+CASE 8
+        IF LEN(cur$) > 0 THEN
+                Ctl(id).cap = LEFT$(cur$, LEN(cur$) - 1)
+                CtlRedraw id
+        END IF
+CASE 13
+        CtlEvent = id
+CASE 27
+        CtlSetFocus 0
+CASE IS >= 32
+        IF LEN(cur$) < 40 THEN
+                Ctl(id).cap = cur$ + k$
+                CtlRedraw id
+        END IF
+END SELECT
+END SUB
+
+SUB CtlSetText (id, t$)
+Ctl(id).cap = t$
+CtlRedraw id
+END SUB
+
+FUNCTION CtlGetText$ (id)
+CtlGetText$ = RTRIM$(Ctl(id).cap)
+END FUNCTION
+
+'Check or uncheck a checkbox or radio button. Use CtlSelect for a radio button
+'that must exclude the others of its group.
+SUB CtlSetChecked (id, v)
+IF v <> 0 THEN Ctl(id).chk = 1 ELSE Ctl(id).chk = 0
+CtlRedraw id
+END SUB
+
+FUNCTION CtlGetChecked (id)
+IF Ctl(id).chk <> 0 THEN CtlGetChecked = -1 ELSE CtlGetChecked = 0
+END FUNCTION

@@ -56,6 +56,7 @@ END FUNCTION
 'Window sets used by the cases. Index 1 is the back window, the last is the front.
 SUB Scene (n)
 WNumber = 0
+CtlReset
 SELECT CASE n
 CASE 1
         NewWin "Alfa", 90, 90, 300, 70
@@ -74,6 +75,20 @@ CASE 3
         NewWin "Right", 320, 240, 320, 240
         NewWin "Maximised", 200, 100, 200, 100
         WGData(3, 5) = 2
+CASE 4
+        'Controls 1 to 9 in window 1; window 2 covers part of the Clear button.
+        NewWin "Controls", 40, 30, 340, 230
+        id = CtlAdd(1, CtlLabel, 8, 6, 60, 16, "Name:")
+        id = CtlAdd(1, CtlText, 70, 4, 200, 22, "snuggle")
+        id = CtlAdd(1, CtlCheck, 8, 36, 160, 16, "Enable sound")
+        id = CtlAdd(1, CtlRadio, 8, 62, 100, 16, "Red")
+        id = CtlAdd(1, CtlRadio, 8, 82, 100, 16, "Green")
+        id = CtlAdd(1, CtlRadio, 8, 102, 100, 16, "Blue")
+        id = CtlAdd(1, CtlButton, 8, 136, 80, 26, "OK")
+        id = CtlAdd(1, CtlButton, 100, 136, 80, 26, "Clear")
+        id = CtlAdd(1, CtlLabel, 8, 176, 300, 16, "Ready")
+        Ctl(4).chk = 1
+        NewWin "Cover", 200, 120, 200, 120
 END SELECT
 END SUB
 
@@ -135,6 +150,51 @@ Metric lbl$ + " writes-per-pixel new", newR!
 Metric lbl$ + " writes-per-pixel legacy", oldR!
 Check lbl$ + " new way writes at most 1.5 per changed pixel", newR! <= 1.5, STR$(newR!)
 Check lbl$ + " new way writes under half of the old way", newW& * 2 < oldW&, STR$(newW&) + " vs" + STR$(oldW&)
+END SUB
+
+'Text drawn with cout against the same characters printed by QBasic (80 per
+'row, characters 32 to 255). QBasic's own printing is the reference font.
+SUB GlyphCase (colo)
+gFill 0, 0, 639, 479, 0
+COLOR colo
+FOR rw = 0 TO 2
+        t$ = ""
+        FOR c = 0 TO 79
+                n = 32 + rw * 80 + c
+                IF n <= 255 THEN t$ = t$ + CHR$(n)
+        NEXT
+        LOCATE rw + 1, 1
+        PRINT t$;
+NEXT
+SnapNo = SnapNo + 1
+Dump "A"
+gFill 0, 0, 639, 479, 0
+FOR rw = 0 TO 2
+        t$ = ""
+        FOR c = 0 TO 79
+                n = 32 + rw * 80 + c
+                IF n <= 255 THEN t$ = t$ + CHR$(n)
+        NEXT
+        cout t$, 0, rw * 16 - 1, colo, 640, 0
+NEXT
+Dump "B"
+Emit "SNAP" + STR$(SnapNo) + " glyphs: cout equals PRINT, colour" + STR$(colo)
+END SUB
+
+'Time and count what a run of operations costs.
+SUB PerfStart
+gWrites = 0
+gCalls = 0
+gPsets = 0
+PerfT = TIMER
+END SUB
+
+SUB PerfStop (lbl$)
+dt! = TIMER - PerfT
+Metric "speed: " + lbl$ + ": seconds", dt!
+Metric "speed: " + lbl$ + ": graphics calls", CSNG(gCalls)
+Metric "speed: " + lbl$ + ": single pixels", CSNG(gPsets)
+Metric "speed: " + lbl$ + ": pixels written", CSNG(gWrites)
 END SUB
 
 'Corrupt a rectangle, repaint it, expect the reference image.

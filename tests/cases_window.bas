@@ -1,3 +1,4 @@
+'Cases: primitives, text, repaint of windows and thin strips, incremental operations.
 SUB RunAll
 '1. The rewritten primitives draw the same pixels as the 1999 code.
 ComparePrim 1, 100, 100, 400, 170
@@ -8,6 +9,10 @@ ComparePrim 2, 100, 100, 400, 118
 ComparePrim 2, 0, 0, 639, 18
 ComparePrim 3, 100, 100, 112, 112
 ComparePrim 3, 300, 200, 312, 212
+
+'1b. Text: every character, drawn by cout, equals what QBasic prints.
+GlyphCase 9
+GlyphCase 2
 
 '2. A full repaint equals the back-to-front reference, for each scene.
 FOR sc = 1 TO 3
@@ -76,10 +81,4 @@ CompareToLegacy "move it"
 WinSetState 3, 2
 CompareToLegacy "maximise it again"
 
-'4. One drag step writes each changed pixel about once. The old way did not.
-Scene 1
-RepaintRect 0, 0, 639, 479
-MeasureDrag "drag top window by 3,2", 3, 3, 2
-MeasureDrag "drag top window by 40,25", 3, 40, 25
-MeasureDrag "drag back window by 8,0", 1, 8, 0
 END SUB

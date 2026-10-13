@@ -6,6 +6,7 @@ S<nnn><A|B><plane>.BIN (BSAVE files: a 7 byte header, then 38400 bytes).
 Failing snapshots also get build/diff_<nnn>.png (A | B | differences).
 
 usage: verify.py <build dir>     exit 1 when a snapshot differs
+       verify.py --render <build dir> <prefix> <out.png>
 """
 import pathlib
 import struct
@@ -14,23 +15,12 @@ import zlib
 
 W, H, PLANE = 640, 480, 38400
 
-# SCREEN 12 attribute -> DAC register (QBasic default), the EGA DAC defaults, and
-# the registers Init changes with OUT &H3C8/&H3C9 (6 bit values).
-ATTR_TO_DAC = [0, 1, 2, 3, 4, 5, 20, 7, 56, 57, 58, 59, 60, 61, 62, 63]
-INIT_DAC = {0: (0, 0, 0), 1: (22, 22, 22), 2: (32, 32, 32), 3: (42, 42, 42),
-            4: (0, 40, 40), 5: (0, 0, 22), 6: (0, 0, 32), 7: (0, 0, 42)}
-
-
-def dac_rgb(i):
-    if i in INIT_DAC:
-        return tuple(round(v * 255 / 63) for v in INIT_DAC[i])
-    r = (i >> 2 & 1) * 0xAA + (i >> 5 & 1) * 0x55
-    g = (i >> 1 & 1) * 0xAA + (i >> 4 & 1) * 0x55
-    b = (i & 1) * 0xAA + (i >> 3 & 1) * 0x55
-    return (r, g, b)
-
-
-PALETTE = [dac_rgb(d) for d in ATTR_TO_DAC]
+# SCREEN 12 colours. Attribute n uses DAC register n (read back from the attribute
+# controller in QBasic 1.1 under DOSBox). QBasic's default values for registers
+# 8 to 15, and for 0 to 7 the values SNUGGLE.BAS sets in Init (6 bit per channel).
+DAC = [(0, 0, 0), (22, 22, 22), (32, 32, 32), (42, 42, 42), (0, 40, 40), (0, 0, 22), (0, 0, 32), (0, 0, 42),
+       (21, 21, 21), (21, 21, 63), (21, 63, 21), (21, 63, 63), (63, 21, 21), (63, 21, 63), (63, 63, 21), (63, 63, 63)]
+PALETTE = [tuple(round(c * 255 / 63) for c in rgb) for rgb in DAC]
 
 
 def load(build, nnn, side):
@@ -80,7 +70,19 @@ def diff_image(path, a, b):
     png(path, W * 3, H, bytes(out))
 
 
+def render(build, prefix, out):
+    """Write <prefix>0.BIN .. <prefix>3.BIN (BSAVE dumps of the four planes) as a PNG."""
+    planes = [(build / ("%s%d.BIN" % (prefix, p))).read_bytes()[7:] for p in range(4)]
+    rgb = bytearray()
+    for v in pixels(planes):
+        rgb += bytes(PALETTE[v])
+    png(pathlib.Path(out), W, H, bytes(rgb))
+
+
 def main():
+    if sys.argv[1] == "--render":
+        render(pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4])
+        return
     build = pathlib.Path(sys.argv[1])
     snaps = []
     for line in (build / "RESULT.TXT").read_text().splitlines():
@@ -96,6 +98,11 @@ def main():
             failed += 1
             continue
         bad = [i for i in range(W * H) if a[i] != b[i]]
+        if label.startswith("look"):
+            rgb = bytearray()
+            for v in a:
+                rgb += bytes(PALETTE[v])
+            png(build / ("look_%s.png" % nnn), W, H, bytes(rgb))
         if not bad:
             print("PASS %s" % label)
             continue

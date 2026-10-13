@@ -25,6 +25,7 @@ setup as `scripts/test.sh`).
 | Does `CHAIN` keep the graphics mode and the pixels on screen? | Yes. `POINT(20, 20)` returned the colour drawn by the first program, and the mode was still graphics. | same test |
 | Does `$INCLUDE` of a `.BI` file (a `CONST` and a `DECLARE`) work? | No. The program did not start (no output file, run stalled). I could not see the error text. | `'$INCLUDE: 'INCL.BI'` |
 | Does the screen survive `RUN "other.bas"`? | Not shown. `POINT` after `RUN` stalled with an empty output file, which fits a reset to text mode. I did not confirm that separately. | `RN.BAS` |
+| How much code can one QBasic 1.1 program hold? | A 52.9 KB source file starts and a 55.5 KB one does not. The same 50 KB program padded with comments to 62 KB starts, so the limit is code, not file size. The mechanism is not known. | `DUM1` to `DUM4`: the passing 50 KB test build plus 1 to 4 procedures of 40 statements |
 | Can QBasic 1.1 build an `.EXE`? | No tool for it in `qb11.zip`: the archive holds only `QBASIC.EXE` and `QBASIC.HLP`. | `unzip -l qb11.zip` |
 | Can it call a DOS interrupt? | `CALL ABSOLUTE` is built in, and `SNUGGLE.BAS` uses it for the mouse (machine code in a string). The `INTERRUPT` statement needs an external library in QBasic and QuickBASIC. | QB64 wiki pages for `CALL ABSOLUTE` and `INTERRUPT` in `docs/qbasic/` |
 
@@ -45,8 +46,10 @@ function pointers.
   turn.
 - **"Freestanding":** the source is separate; the running program is not.
 - **Cost:** low. Everything needed exists in the engine now.
-- **Limit (not measured here):** one QBasic module has a size limit. The file
-  is now about 1,300 lines; I do not know how much room is left.
+- **Limit (measured):** about 53 to 55 KB of code per program (see the table).
+  `SNUGGLE.BAS` was 50 KB with the controls, and 39 KB after the unused mouse
+  procedures were removed, so an app layer has roughly 14 KB to grow into.
+  Apps will need to be small, or the kernel smaller.
 
 ### B. Apps as separate programs with `CHAIN`
 
@@ -87,6 +90,9 @@ The engine already has most of this. The new part is the app side.
 
 ```
 Kernel services (exist now)
+  CtlAdd, CtlSetText, CtlGetText$, CtlSetChecked, CtlGetChecked, CtlSelect,
+  CtlSetFocus, CtlAt, CtlEvent   labels, buttons, checkboxes, radio buttons and
+                                 text boxes inside a window (see README)
   NewWin text$, x, y, w, h        create a window, returns through WNumber
   WinMoveTo who, x, y             move; repaints only what changed
   WinSizeTo who, w, h             resize
@@ -155,7 +161,8 @@ I did not read the `fs` API page, so I do not list its functions here.
 
 ## Unverified
 
-- Module size and data-segment limits of QBasic 1.1 for a merged program.
+- Why the code limit is where it is, and whether data (the 78 KB of font
+  arrays) counts against it.
 - Whether `COMMON` can carry arrays the size of the font tables.
 - Why `$INCLUDE` failed (the dialog text could not be read headless).
 - The js-dos `fs` and `ci` function list.

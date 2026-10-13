@@ -1,4 +1,7 @@
 DECLARE SUB Emit (s$)
+DECLARE SUB PerfStart ()
+DECLARE SUB GlyphCase (colo%)
+DECLARE SUB PerfStop (lbl$)
 DECLARE SUB Check (lbl$, ok%, info$)
 DECLARE SUB Metric (lbl$, v!)
 DECLARE SUB Dump (side$)

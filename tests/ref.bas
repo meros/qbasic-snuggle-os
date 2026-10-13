@@ -52,6 +52,7 @@ END SUB
 SUB RefWinDrwMng (who)
 GetStats who, text$, x, y, w, h, state
 RefWinDrw text$, x, y, w, h, state, 1, 1, 1
+IF state <> 0 THEN CtlDrawAll who
 END SUB
 
 'Whole screen, back to front: the reference image for any window state.
