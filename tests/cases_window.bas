@@ -51,11 +51,11 @@ RepaintRect 0, 0, 639, 479
 WinPutTop 2
 CompareToLegacy "copy: raise window 2"
 FOR i = 1 TO 6
-        WinMoveTo 2, WGData(2, 1) + 23, WGData(2, 2) + 9
+        WinMoveTo 2, HGet(2, WfX) + 23, HGet(2, WfY) + 9
 NEXT
 CompareToLegacy "copy: six steps down and right"
 FOR i = 1 TO 6
-        WinMoveTo 2, WGData(2, 1) - 17, WGData(2, 2) - 14
+        WinMoveTo 2, HGet(2, WfX) - 17, HGet(2, WfY) - 14
 NEXT
 CompareToLegacy "copy: six steps up and left"
 WinMoveTo 2, -60, -20
@@ -85,7 +85,7 @@ CompareToLegacy "copy: unroll it"
 Scene 2
 RepaintRect 0, 0, 639, 479
 FOR i = 1 TO 12
-        WinMoveTo 2, WGData(2, 1) + 17, WGData(2, 2) + 11
+        WinMoveTo 2, HGet(2, WfX) + 17, HGet(2, WfY) + 11
         IF i MOD 4 = 0 THEN CompareToLegacy "drag window 2, step" + STR$(i)
 NEXT
 WinMoveTo 2, -60, -20
@@ -126,4 +126,28 @@ CompareToLegacy "maximise it again"
 
 
 IconCase
+END SUB
+
+'Desktop icons are part of the background: they show where it shows, and a
+'window moved over them leaves them whole.
+SUB IconCase
+Scene 1
+IconCount = 0
+IconAdd 1, "Hello"
+IconAdd 1, "Other"
+RepaintRect 0, 0, 639, 479
+CompareToLegacy "desktop: icons on the background"
+Check "an icon takes a click", IconAt(30, 20) = 1 AND IconAt(30, 90) = 2, STR$(IconAt(30, 20)) + STR$(IconAt(30, 90))
+Check "the desktop between icons is no icon", IconAt(300, 400) = 0 AND IconAt(30, 70) = 0, ""
+WinMoveTo 3, 10, 10
+CompareToLegacy "desktop: a window moved over the icons"
+WinMoveTo 3, 400, 300
+CompareToLegacy "desktop: the icons come back"
+before = WNumber
+AppLaunch 1
+Check "an icon launch makes one window", WNumber = before + 1 AND AppGet(WNew, 0) > 0, STR$(WNumber)
+CompareToLegacy "desktop: a launched window is painted"
+WinClose WNew
+CompareToLegacy "desktop: a closed window uncovers the icons"
+IconCount = 0
 END SUB

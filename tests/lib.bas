@@ -68,26 +68,27 @@ CASE 2
         NewWin "Half off screen", 500, 400, 200, 150
         NewWin "Small", 50, 300, 120, 60
         NewWin "Front", 250, 150, 90, 40
-        WGData(3, 5) = 0
+        HSet 3, WfState, 0
 CASE 3
         NewWin "Left", 0, 0, 320, 240
         NewWin "Right", 320, 240, 320, 240
         NewWin "Maximised", 200, 100, 200, 100
-        WGData(3, 5) = 2
+        HSet 3, WfState, 2
 CASE 4
-        'Controls 1 to 9 in window 1; window 2 covers part of the Clear button.
+        'Controls Kc(1) to Kc(9) in window 1; window Wcover covers part of the Clear button.
         NewWin "Controls", 40, 30, 340, 230
-        id = CtlAdd(1, CtlLabel, 8, 6, 60, 16, "Name:")
-        id = CtlAdd(1, CtlText, 70, 4, 200, 22, "snuggle")
-        id = CtlAdd(1, CtlCheck, 8, 36, 160, 16, "Enable sound")
-        id = CtlAdd(1, CtlRadio, 8, 62, 100, 16, "Red")
-        id = CtlAdd(1, CtlRadio, 8, 82, 100, 16, "Green")
-        id = CtlAdd(1, CtlRadio, 8, 102, 100, 16, "Blue")
-        id = CtlAdd(1, CtlButton, 8, 136, 80, 26, "OK")
-        id = CtlAdd(1, CtlButton, 100, 136, 80, 26, "Clear")
-        id = CtlAdd(1, CtlLabel, 8, 176, 300, 16, "Ready")
-        Ctl(4).chk = 1
+        Kc(1) = CtlAdd(1, CtlLabel, 8, 6, 60, 16, "Name:")
+        Kc(2) = CtlAdd(1, CtlText, 70, 4, 200, 22, "snuggle")
+        Kc(3) = CtlAdd(1, CtlCheck, 8, 36, 160, 16, "Enable sound")
+        Kc(4) = CtlAdd(1, CtlRadio, 8, 62, 100, 16, "Red")
+        Kc(5) = CtlAdd(1, CtlRadio, 8, 82, 100, 16, "Green")
+        Kc(6) = CtlAdd(1, CtlRadio, 8, 102, 100, 16, "Blue")
+        Kc(7) = CtlAdd(1, CtlButton, 8, 136, 80, 26, "OK")
+        Kc(8) = CtlAdd(1, CtlButton, 100, 136, 80, 26, "Clear")
+        Kc(9) = CtlAdd(1, CtlLabel, 8, 176, 300, 16, "Ready")
+        HSet Kc(4), CfChk, 1
         NewWin "Cover", 200, 120, 200, 120
+        Wcover = WNew
 END SELECT
 END SUB
 
@@ -125,22 +126,22 @@ END SUB
 'the step has to change (old rectangle plus new rectangle).
 SUB MeasureDrag (lbl$, who, dx, dy)
 WinRect who, ox1, oy1, ox2, oy2
-WGData(who, 1) = WGData(who, 1) + dx
-WGData(who, 2) = WGData(who, 2) + dy
+HSet who, WfX, HGet(who, WfX) + dx
+HSet who, WfY, HGet(who, WfY) + dy
 WinRect who, nx1, ny1, nx2, ny2
-WGData(who, 1) = WGData(who, 1) - dx
-WGData(who, 2) = WGData(who, 2) - dy
+HSet who, WfX, HGet(who, WfX) - dx
+HSet who, WfY, HGet(who, WfY) - dy
 area& = ClipArea&(ox1, oy1, ox2, oy2) + ClipArea&(nx1, ny1, nx2, ny2) - InterArea&(ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2)
 
 gWrites = 0
-WinMoveTo who, WGData(who, 1) + dx, WGData(who, 2) + dy
+WinMoveTo who, HGet(who, WfX) + dx, HGet(who, WfY) + dy
 newW& = gWrites
-WinMoveTo who, WGData(who, 1) - dx, WGData(who, 2) - dy
+WinMoveTo who, HGet(who, WfX) - dx, HGet(who, WfY) - dy
 
 gWrites = 0
-LegacyMoveTo who, WGData(who, 1) + dx, WGData(who, 2) + dy
+LegacyMoveTo who, HGet(who, WfX) + dx, HGet(who, WfY) + dy
 oldW& = gWrites
-LegacyMoveTo who, WGData(who, 1) - dx, WGData(who, 2) - dy
+LegacyMoveTo who, HGet(who, WfX) - dx, HGet(who, WfY) - dy
 
 newR! = newW& / area&
 oldR! = oldW& / area&
@@ -227,121 +228,4 @@ SUB ThinCase (lbl$, x1, y1, x2, y2)
 gFill x1, y1, x2, y2, 9
 RepaintRect x1, y1, x2, y2
 CompareToLegacy lbl$
-END SUB
-
-'The heap keeps blocks intact when others are freed, compacts without gaps,
-'refuses what does not fit, and gives back everything a closed window owned.
-SUB HeapCase
-WinReset
-a = MemAlloc(1, 10)
-b = MemAlloc(2, 20)
-c = MemAlloc(1, 5)
-FOR i = 0 TO 9: MemSet a, i, 100 + i: NEXT
-FOR i = 0 TO 19: MemSet b, i, 200 + i: NEXT
-FOR i = 0 TO 4: MemSet c, i, 300 + i: NEXT
-Check "heap: three blocks fill 35 words", HeapTop = 35, STR$(HeapTop)
-MemFree a
-ok = (HeapTop = 25 AND HBase(b) = 0 AND HBase(c) = 20)
-FOR i = 0 TO 19
-        IF MemGet(b, i) <> 200 + i THEN ok = 0
-NEXT
-FOR i = 0 TO 4
-        IF MemGet(c, i) <> 300 + i THEN ok = 0
-NEXT
-Check "heap: a free slides the blocks above it down and keeps their data", ok, STR$(HeapTop)
-Check "heap: a freed handle reads 0", MemGet(a, 0) = 0, ""
-MemSet b, 20, 7
-MemSet b, -1, 7
-Check "heap: an index outside the block is refused", MemGet(b, 20) = 0 AND MemGet(c, 0) = 300, ""
-Check "heap: a block that does not fit is refused", MemAlloc(3, 5000) = 0, ""
-MemFreeAll 1
-Check "heap: freeing an owner frees all its blocks", HeapTop = 20 AND HSize(c) = 0 AND MemGet(b, 19) = 219, STR$(HeapTop)
-d = MemAlloc(4, HeapWords + 1 - 20)
-Check "heap: a block can fill the heap to the last word", d > 0 AND MemAlloc(4, 1) = 0, STR$(d)
-MemFreeAll 4
-
-'A window made by an app owns a data block; closing it frees block and controls.
-Scene 4
-w = AppWindow(9, "Data", 400, 300, 100, 60, 8)
-used = HeapTop
-AppSet w, 3, 77
-Check "app window: its data block holds a value", AppGet(w, 3) = 77 AND used = 8, STR$(used)
-x = CtlAdd(w, CtlButton, 4, 4, 60, 22, "X")
-RepaintRect 0, 0, 639, 479
-WinClose w
-Check "close: the heap block is freed", HeapTop = 0, STR$(HeapTop)
-Check "close: the window left the order", WNumber = 2, STR$(WNumber)
-Check "close: its control is dead and its number is reused", CtlAdd(1, CtlLabel, 0, 0, 10, 10, "") = x, ""
-CompareToLegacy "close: the area of a closed window is repainted"
-WinClose 1
-CompareToLegacy "close: a window with controls closes"
-Check "close: its controls take no click", CtlAt(150, 66) = 0, STR$(CtlAt(150, 66))
-END SUB
-
-'Desktop icons are part of the background: they show where it shows, and a
-'window moved over them leaves them whole.
-SUB IconCase
-Scene 1
-IconCount = 0
-IconAdd 1, "Hello"
-IconAdd 1, "Other"
-RepaintRect 0, 0, 639, 479
-CompareToLegacy "desktop: icons on the background"
-Check "an icon takes a click", IconAt(30, 20) = 1 AND IconAt(30, 90) = 2, STR$(IconAt(30, 20)) + STR$(IconAt(30, 90))
-Check "the desktop between icons is no icon", IconAt(300, 400) = 0 AND IconAt(30, 70) = 0, ""
-WinMoveTo 3, 10, 10
-CompareToLegacy "desktop: a window moved over the icons"
-WinMoveTo 3, 400, 300
-CompareToLegacy "desktop: the icons come back"
-before = WNumber
-AppLaunch 1
-Check "an icon launch makes one window", WNumber = before + 1 AND AppGet(WNew, 0) > 0, STR$(WNumber)
-CompareToLegacy "desktop: a launched window is painted"
-WinClose WNew
-CompareToLegacy "desktop: a closed window uncovers the icons"
-IconCount = 0
-END SUB
-
-'Running out of memory: a refusal, never a crash, and nothing half made is left.
-SUB OomCase
-'The heap is full: the window made for the block goes again.
-WinReset
-a = AppWindow(9, "A", 10, 10, 100, 60, HeapWords + 1)
-OomFlag = 0
-b = AppWindow(9, "B", 50, 50, 100, 60, 5)
-Check "oom: no heap, no window, flag 1", b = 0 AND OomFlag = 1 AND WNumber = 1, STR$(b) + STR$(OomFlag) + STR$(WNumber)
-Check "oom: the first window and the full heap are intact", a > 0 AND HeapTop = HeapWords + 1, STR$(HeapTop)
-'Out of window slots.
-WinReset
-FOR i = 1 TO WNMax
-        w = AppWindow(9, "W", i * 5, i * 5, 90, 40, 1)
-NEXT
-OomFlag = 0
-b = AppWindow(9, "X", 0, 0, 90, 40, 1)
-Check "oom: no window slot, flag 2", b = 0 AND OomFlag = 2 AND WNumber = WNMax, STR$(WNumber)
-'Out of control slots, and a control of window 0 is refused without a flag.
-WinReset
-w = AppWindow(9, "C", 10, 10, 200, 200, 1)
-FOR i = 1 TO CtlMax
-        dummy = CtlAdd(w, CtlLabel, 0, 0, 10, 10, "")
-NEXT
-OomFlag = 0
-Check "oom: no control slot, flag 3", CtlAdd(w, CtlLabel, 0, 0, 10, 10, "") = 0 AND OomFlag = 3, STR$(OomFlag)
-OomFlag = 0
-Check "oom: a control of window 0 is refused quietly", CtlAdd(0, CtlLabel, 0, 0, 10, 10, "") = 0 AND OomFlag = 0, ""
-'An app that cannot get its memory leaves nothing behind.
-WinReset
-a = AppWindow(9, "Fill", 10, 10, 100, 60, HeapWords + 1 - 3)
-n = WNumber: t = HeapTop
-AppLaunch 1
-Check "oom launch: heap full, no window left", WNumber = n AND HeapTop = t AND OomFlag = 1 AND CtlCount = 0, STR$(WNumber) + STR$(HeapTop) + STR$(CtlCount)
-WinReset
-w = AppWindow(9, "C", 10, 10, 200, 200, 1)
-FOR i = 1 TO CtlMax
-        dummy = CtlAdd(w, CtlLabel, 0, 0, 10, 10, "")
-NEXT
-n = WNumber: t = HeapTop
-AppLaunch 1
-Check "oom launch: no control slot, the half made instance is closed", WNumber = n AND HeapTop = t AND OomFlag = 3, STR$(WNumber) + STR$(HeapTop)
-WinReset
 END SUB

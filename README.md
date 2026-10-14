@@ -82,16 +82,19 @@ procedure in `AppStartAll`/`AppLaunch`, and a case in `AppEvent`.
 
 | Procedure | What |
 | --- | --- |
-| `AppWindow(app, title$, x, y, w, h, words)` | Window for the app plus a data block of `words` words. Returns the window number, 0 when there is no free slot. |
+| `AppWindow(app, title$, x, y, w, h, words)` | Window for the app plus a data block of `words` words. Returns the window number, 0 when the heap has no room (`OomFlag`). |
 | `AppGet(win, i)`, `AppSet win, i, v` | Word i of the window's data block (control numbers, state). An index outside the block is refused. |
 | `AppEvent win, ctl` | Called by the kernel when a control of the window was clicked or accepted. |
-| `WinClose win` | Closes the window: its controls die, its heap blocks are freed and the heap is compacted, the area is repainted. The close button calls it. |
+| `WinClose win` | Closes the window: its controls and data are freed and the heap is compacted, the area is repainted. The close button calls it. |
 
-The heap is one 4 KB array. Blocks are packed from word 0 without gaps and are
-used through handles, so a free can slide the blocks above it down at once:
-`MemAlloc(owner, words)`, `MemFree h`, `MemFreeAll owner`, `MemGet(h, i)`,
-`MemSet h, i, v`. A window owns the blocks made for it, and closing the window
-frees them.
+The heap is one 4 KB array and the only allocator. A window, a control and an
+app data block are blocks of it, used through handles; the handle is the id of
+the window or the control. Blocks are packed from word 0 without gaps, so a free
+slides the blocks above it down at once. Every block has an owner, a window; a
+window owns itself, its controls and its data, and closing the window frees them
+all. `MemAlloc(owner, kind, words)` returns a handle, or 0 and `OomFlag` when
+the heap or the 63 handles are full. A launch that runs out of memory closes
+what it made and shows a notice on the bottom bar.
 
 ## Controls
 
@@ -129,7 +132,7 @@ compares the dumps pixel by pixel on the host. A failing case writes
 idle machine. DOSBox sometimes crashes at start under Xvfb; the script runs the
 test again when that happens.
 
-The cases run as three programs (window, controls, speed), and the test build
+The cases run as three programs (window, controls, heap, speed), and the test build
 leaves out the mouse library, the hit tests, the drag loops and the palette
 setup, to keep the test build inside QBasic's memory (code and arrays share
 about 160 KB). `scripts/test.sh` prints the memory left after the first paint,

@@ -6,7 +6,7 @@
 #
 # 1. smoke: SNUGGLE.BAS as shipped, stopped right after its first paint.
 # 2. cases: tests/*.bas spliced into SNUGGLE.BAS (tests/build_test.py), one program
-#    per group (window, controls, speed). The cases
+#    per group (window, controls, heap, speed). The cases
 #    dump the screen planes (BSAVE) next to a reference image drawn with the 1999
 #    code; tests/verify.py compares the dumps pixel for pixel on the host.
 #
@@ -45,7 +45,7 @@ else
   exit 2
 fi
 
-groups="window controls speed"
+groups="window controls heap speed"
 total_fail=0
 for group in $groups; do
   echo "== cases: $group"

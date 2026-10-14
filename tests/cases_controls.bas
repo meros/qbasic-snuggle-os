@@ -4,68 +4,68 @@ SUB RunAll
 Scene 4
 RepaintRect 0, 0, 639, 479
 CompareToLegacy "look: controls in a window"
-Check "the text box takes a click", CtlAt(150, 66) = 2, STR$(CtlAt(150, 66))
-Check "the OK button takes a click", CtlAt(80, 200) = 7, STR$(CtlAt(80, 200))
-Check "the Clear button takes a click", CtlAt(150, 200) = 8, STR$(CtlAt(150, 200))
+Check "the text box takes a click", CtlAt(150, 66) = Kc(2), STR$(CtlAt(150, 66))
+Check "the OK button takes a click", CtlAt(80, 200) = Kc(7), STR$(CtlAt(80, 200))
+Check "the Clear button takes a click", CtlAt(150, 200) = Kc(8), STR$(CtlAt(150, 200))
 Check "a window in front blocks the Clear button", CtlAt(210, 200) = 0, STR$(CtlAt(210, 200))
 Check "a label takes no click", CtlAt(55, 60) = 0, STR$(CtlAt(55, 60))
 Check "the title bar is not a control", CtlAt(100, 38) = 0, STR$(CtlAt(100, 38))
 
 CtlEvent = 0
-CtlActivate 3
-Check "a checkbox checks", CtlGetChecked(3) = -1, ""
-Check "a checkbox reports a click", CtlEvent = 3, STR$(CtlEvent)
+CtlActivate Kc(3)
+Check "a checkbox checks", CtlGetChecked(Kc(3)) = -1, ""
+Check "a checkbox reports a click", CtlEvent = Kc(3), STR$(CtlEvent)
 CompareToLegacy "controls: checkbox checked"
-CtlActivate 3
-Check "a checkbox unchecks", CtlGetChecked(3) = 0, ""
+CtlActivate Kc(3)
+Check "a checkbox unchecks", CtlGetChecked(Kc(3)) = 0, ""
 
-CtlActivate 6
-Check "a radio button selects", CtlGetChecked(6) = -1, ""
-Check "the others of its group clear", CtlGetChecked(4) = 0 AND CtlGetChecked(5) = 0, ""
+CtlActivate Kc(6)
+Check "a radio button selects", CtlGetChecked(Kc(6)) = -1, ""
+Check "the others of its group clear", CtlGetChecked(Kc(4)) = 0 AND CtlGetChecked(Kc(5)) = 0, ""
 CompareToLegacy "controls: radio group"
 
 CtlEvent = 0
-CtlActivate 7
-Check "a button reports a click", CtlEvent = 7, STR$(CtlEvent)
+CtlActivate Kc(7)
+Check "a button reports a click", CtlEvent = Kc(7), STR$(CtlEvent)
 CtlEvent = 0
 
-CtlDown = 7
-CtlRedraw 7
+CtlDown = Kc(7)
+CtlRedraw Kc(7)
 CompareToLegacy "look: button held down"
 CtlDown = 0
-CtlRedraw 7
+CtlRedraw Kc(7)
 
-CtlActivate 2
-Check "a click focuses the text box", CtlFocus = 2, STR$(CtlFocus)
+CtlActivate Kc(2)
+Check "a click focuses the text box", CtlFocus = Kc(2), STR$(CtlFocus)
 CtlKey "x"
-Check "a key is added", CtlGetText$(2) = "snugglex", CtlGetText$(2)
+Check "a key is added", CtlGetText$(Kc(2)) = "snugglex", CtlGetText$(Kc(2))
 CtlKey CHR$(8)
 CtlKey CHR$(8)
-Check "backspace removes a character", CtlGetText$(2) = "snuggl", CtlGetText$(2)
+Check "backspace removes a character", CtlGetText$(Kc(2)) = "snuggl", CtlGetText$(Kc(2))
 CompareToLegacy "look: focused text box"
 CtlEvent = 0
 CtlKey CHR$(13)
-Check "enter accepts", CtlEvent = 2, STR$(CtlEvent)
+Check "enter accepts", CtlEvent = Kc(2), STR$(CtlEvent)
 FOR i = 1 TO 50
         CtlKey "m"
 NEXT
-Check "the text stops at 40 characters", LEN(CtlGetText$(2)) = 40, STR$(LEN(CtlGetText$(2)))
+Check "the text stops at 40 characters", LEN(CtlGetText$(Kc(2))) = 40, STR$(LEN(CtlGetText$(Kc(2))))
 CompareToLegacy "controls: text longer than the box"
 CtlKey CHR$(27)
 Check "escape leaves the box", CtlFocus = 0, STR$(CtlFocus)
-CtlSetText 9, "Hello, world"
+CtlSetText Kc(9), "Hello, world"
 CompareToLegacy "controls: label text changed"
 
 WinSizeTo 1, 200, 110
-Check "a control outside the client area is not drawn", CtlVisible(9) = 0, ""
-Check "a control inside it is", CtlVisible(2) = 0, "text box is 70 + 200 wide, so it does not fit either"
+Check "a control outside the client area is not drawn", CtlVisible(Kc(9)) = 0, ""
+Check "a control inside it is", CtlVisible(Kc(2)) = 0, "text box is 70 + 200 wide, so it does not fit either"
 CompareToLegacy "controls: window shrunk"
 WinSizeTo 1, 340, 230
 WinMoveTo 1, -100, 20
 CompareToLegacy "controls: window partly off screen"
 WinMoveTo 1, 40, 30
 WinSetState 1, 0
-Check "a rolled up window shows no controls", CtlVisible(2) = 0, ""
+Check "a rolled up window shows no controls", CtlVisible(Kc(2)) = 0, ""
 Check "a rolled up window takes no click", CtlAt(150, 66) = 0, STR$(CtlAt(150, 66))
 CompareToLegacy "controls: window rolled up"
 WinSetState 1, 1
@@ -74,7 +74,7 @@ WinSetState 1, 2
 CompareToLegacy "controls: window maximised"
 WinSetState 1, 1
 WinPutTop 1
-Check "raised, the Clear button takes the click", CtlAt(210, 200) = 8, STR$(CtlAt(210, 200))
+Check "raised, the Clear button takes the click", CtlAt(210, 200) = Kc(8), STR$(CtlAt(210, 200))
 CompareToLegacy "look: controls window raised over the cover"
 
 'Resizing keeps the client area and repaints the frame, the title bar and the
@@ -101,27 +101,25 @@ WinSizeTo 1, 340, 230
 WinPutTop 1
 WinMoveTo 1, 90, 60
 CompareToLegacy "look: controls window moved by a copy"
-CtlActivate 3
+CtlActivate Kc(3)
 CompareToLegacy "controls: checkbox on a moved window"
-CtlDown = 8
-CtlRedraw 8
+CtlDown = Kc(8)
+CtlRedraw Kc(8)
 CompareToLegacy "controls: button pressed while a window is in front of it"
 CtlDown = 0
-CtlRedraw 8
-WinPutTop 2
-CtlDown = 7
-CtlRedraw 7
+CtlRedraw Kc(8)
+WinPutTop Wcover
+CtlDown = Kc(7)
+CtlRedraw Kc(7)
 CompareToLegacy "controls: button pressed in a window that is not in front"
 CtlDown = 0
-CtlRedraw 7
+CtlRedraw Kc(7)
 
 '6. A control redraw touches the control and little else.
 gWrites = 0
-CtlRedraw 3
+CtlRedraw Kc(3)
 Metric "checkbox redraw writes", CSNG(gWrites)
 Check "a checkbox redraw stays under 4000 writes", gWrites < 4000, STR$(gWrites)
 
 
-HeapCase
-OomCase
 END SUB

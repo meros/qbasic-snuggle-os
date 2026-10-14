@@ -13,20 +13,20 @@ WinPutTop 1
 RepaintRect 0, 0, 639, 479
 PerfStart
 FOR i = 1 TO 40
-        WinMoveTo 1, WGData(1, 1) + 3, WGData(1, 2) + 2
+        WinMoveTo 1, HGet(1, WfX) + 3, HGet(1, WfY) + 2
 NEXT
 PerfStop "drag the controls window, 40 steps"
 CompareToLegacy "speed: after the drag"
 
 PerfStart
 FOR i = 1 TO 20
-        CtlSetChecked 3, i AND 1
+        CtlSetChecked Kc(3), i AND 1
 NEXT
 PerfStop "toggle a checkbox, 20 times"
 
 PerfStart
 FOR i = 1 TO 10
-        CtlSetText 9, "Count" + STR$(i)
+        CtlSetText Kc(9), "Count" + STR$(i)
 NEXT
 PerfStop "change a label, 10 times"
 
@@ -49,7 +49,7 @@ CompareToLegacy "speed: after the state changes"
 
 PerfStart
 FOR i = 1 TO 4
-        WinPutTop 2
+        WinPutTop Wcover
         WinPutTop 1
 NEXT
 PerfStop "raise two windows alternately, 8 raises"

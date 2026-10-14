@@ -98,7 +98,7 @@ END SUB
 'One drag step the old way: erase, repaint what was below, draw the window again.
 SUB LegacyMoveTo (who, nx, ny)
 LegacyUnDrw who
-WGData(who, 1) = nx
-WGData(who, 2) = ny
+HSet who, WfX, nx
+HSet who, WfY, ny
 RefWinDrwMng who
 END SUB

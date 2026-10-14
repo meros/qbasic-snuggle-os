@@ -9,34 +9,34 @@
 CONST LB = &H1      'constant for left button
 '***************
 CONST TtlHeight = 18
+'Everything a window or an app owns lives in the heap (see 'The heap' below), in
+'blocks of one kind. A block is reached by its handle: that number is the id of
+'a window or a control.
+CONST KWin = 1, KCtl = 2, KData = 3
+CONST WfX = 0, WfY = 1, WfW = 2, WfH = 3, WfState = 4, WfApp = 5, WfData = 6, WinWords = 7
+CONST CfKind = 0, CfX = 1, CfY = 2, CfW = 3, CfH = 4, CfChk = 5, CfGrp = 6, CtlWords = 7
 'Controls
-CONST CtlMax = 32
 CONST CtlLabel = 1
 CONST CtlButton = 2
 CONST CtlCheck = 3
 CONST CtlRadio = 4
 CONST CtlText = 5
-TYPE CtlRec
-        kind AS INTEGER         'CtlLabel .. CtlText
-        win AS INTEGER          'window that holds it
-        x AS INTEGER            'position inside the window's client area
-        y AS INTEGER
-        w AS INTEGER
-        h AS INTEGER
-        chk AS INTEGER          'checkbox and radio: 0 or 1
-        grp AS INTEGER          'radio buttons with the same window and group exclude each other
-        cap AS STRING * 40      'caption, or the text of a text box
-END TYPE
 DIM SHARED GlyphData(1023) AS INTEGER   'characters 128 to 255, 16 row bytes each (characters 32 to 127 are read from SprData)
 DIM SHARED Mask(15) AS INTEGER          'the 16 row bytes of the glyph being drawn, bit 7 is the left pixel
 
-DIM SHARED WNMax AS INTEGER
-WNMax = 10
+CONST HeapWords = 2047                  'the heap: 4 KB
+CONST HeapMax = 63                      'blocks at most
+DIM SHARED Heap(HeapWords) AS INTEGER
+DIM SHARED HBase(HeapMax) AS INTEGER    'first word of a block
+DIM SHARED HSize(HeapMax) AS INTEGER    'words in a block, 0 for a free handle
+DIM SHARED HOwner(HeapMax) AS INTEGER   'window the block belongs to (a window owns itself)
+DIM SHARED HKind(HeapMax) AS INTEGER    'KWin, KCtl or KData
+DIM SHARED HText(HeapMax) AS STRING     'title of a window, caption of a control
+DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
+DIM SHARED OomFlag AS INTEGER           '-1 when a block could not be had, set by MemAlloc
 DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
-DIM SHARED WGData(WNMax, 7) AS INTEGER  '1 to 4 x, y, w, h; 5 state; 6 owner app; 7 heap handle of its data; 0 in use
-DIM SHARED WNew AS INTEGER              'the slot NewWin gave the window it made last
-DIM SHARED WTData(WNMax) AS STRING
-DIM SHARED WOrder(WNMax) AS INTEGER
+DIM SHARED WNew AS INTEGER              'the window NewWin made last, 0 when it could not
+DIM SHARED WOrder(HeapMax) AS INTEGER
 DIM SHARED RL(1, 64, 4) AS INTEGER  'Repaint work lists of rectangles (x1, y1, x2, y2): the ones still to
                                         'paint, and the ones left after the next window. They swap roles.
 DIM SHARED ClipCol AS INTEGER           'a clip one pixel thick is padded; these save the pixels
@@ -45,9 +45,7 @@ DIM SHARED ClipColY AS INTEGER
 DIM SHARED ClipRow AS INTEGER
 DIM SHARED ClipRowX AS INTEGER
 DIM SHARED ClipRowY AS INTEGER
-DIM SHARED Ctl(CtlMax) AS CtlRec
-DIM SHARED CtlCount AS INTEGER
-DIM SHARED VisOld(CtlMax) AS INTEGER           'which controls were drawn before a resize
+DIM SHARED VisOld(HeapMax) AS INTEGER   'which controls were drawn before a resize
 DIM SHARED CtlFocus AS INTEGER          'text box that receives the keys, 0 for none
 DIM SHARED CtlDown AS INTEGER           'button that is held down, 0 for none
 DIM SHARED CtlEvent AS INTEGER          'control that was clicked or accepted, 0 for none
@@ -66,19 +64,11 @@ DIM SHARED Scratch(4100) AS INTEGER     'GET and PUT buffer: BlitMove uses all o
 DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
 DIM SHARED MouseOK AS INTEGER
 DIM SHARED MouseVis AS INTEGER
-CONST HeapWords = 2047                  'the heap of the apps: 4 KB
-CONST HeapMax = 31                      'blocks at most
-DIM SHARED Heap(HeapWords) AS INTEGER
-DIM SHARED HBase(HeapMax) AS INTEGER    'first word of a block
-DIM SHARED HSize(HeapMax) AS INTEGER    'words in a block, 0 for a free handle
-DIM SHARED HOwner(HeapMax) AS INTEGER   'window the block belongs to
 DIM SHARED IconApp(7) AS INTEGER        'desktop icons: the app they start, where they are, their name
 DIM SHARED IconX(7) AS INTEGER
 DIM SHARED IconY(7) AS INTEGER
 DIM SHARED IconText(7) AS STRING
 DIM SHARED IconCount AS INTEGER
-DIM SHARED OomFlag AS INTEGER           'what ran out last: 1 heap, 2 window slots, 3 control slots, 0 nothing
-DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
 
 
 DEFINT A-Z
@@ -112,17 +102,17 @@ CASE 1 TO 3
         CASE 1
                 WinClose CW
         CASE 2
-                IF WGData(CW, 5) <> 2 THEN WinSetState CW, 2 ELSE WinSetState CW, 1
+                IF HGet(CW, WfState) <> 2 THEN WinSetState CW, 2 ELSE WinSetState CW, 1
         CASE 3
-                IF WGData(CW, 5) <> 0 THEN WinSetState CW, 0 ELSE WinSetState CW, 1
+                IF HGet(CW, WfState) <> 0 THEN WinSetState CW, 0 ELSE WinSetState CW, 1
         END SELECT
 CASE 4
         CtlSetFocus 0
         WinPutTop CW
-        IF WGData(CW, 5) <> 2 THEN StartDrag 0, CW
+        IF HGet(CW, WfState) <> 2 THEN StartDrag 0, CW
 CASE 5 TO 7
         WinPutTop CW
-        IF WGData(CW, 5) <> 2 THEN StartDrag part - 4, CW
+        IF HGet(CW, WfState) <> 2 THEN StartDrag part - 4, CW
 CASE 8
         IF cid > 0 THEN
                 WinPutTop CW
@@ -150,7 +140,7 @@ IF CtlFocus <> 0 THEN
         k$ = ""
 END IF
 IF CtlEvent <> 0 THEN
-        AppEvent Ctl(CtlEvent).win, CtlEvent
+        AppEvent HOwner(CtlEvent), CtlEvent
         CtlEvent = 0
 END IF
 IF UCASE$(k$) = "R" THEN refresh
@@ -176,22 +166,22 @@ FUNCTION AppWindow (app, title$, x, y, w, h, words)
 NewWin title$, x, y, w, h
 AppWindow = 0
 IF WNew = 0 THEN EXIT FUNCTION
-h = MemAlloc(WNew, words)
+h = MemAlloc(WNew, KData, words)
 IF h = 0 THEN
         WinClose WNew
         EXIT FUNCTION
 END IF
-WGData(WNew, 6) = app
-WGData(WNew, 7) = h
+HSet WNew, WfApp, app
+HSet WNew, WfData, h
 AppWindow = WNew
 END FUNCTION
 
 FUNCTION AppGet (win, i)
-AppGet = MemGet(WGData(win, 7), i)
+AppGet = MemGet(HGet(win, WfData), i)
 END FUNCTION
 
 SUB AppSet (win, i, v)
-MemSet WGData(win, 7), i, v
+MemSet HGet(win, WfData), i, v
 END SUB
 
 'Start what runs at boot: the icons, and one instance of Hello.
@@ -212,19 +202,14 @@ IF OomFlag = 0 THEN
         IF WNew > 0 THEN WinShow WNew
 ELSE
         'Out of memory: take back what the instance got, and say so.
-        IF WNew > 0 THEN IF WGData(WNew, 0) <> 0 THEN WinClose WNew
-        SELECT CASE OomFlag
-        CASE 1: m$ = "the heap is full"
-        CASE 2: m$ = "no free window"
-        CASE ELSE: m$ = "no free control"
-        END SELECT
-        Notice "Out of memory: " + m$ + ". The app was not started."
+        IF HKind(WNew) = KWin THEN WinClose WNew
+        Notice "Out of memory. The app was not started."
 END IF
 END SUB
 
 'A control of window win was clicked or accepted.
 SUB AppEvent (win, ctl)
-SELECT CASE WGData(win, 6)
+SELECT CASE HGet(win, WfApp)
 CASE 1
         HelloEvent win, ctl
 END SELECT
@@ -377,21 +362,17 @@ gLine x + w, y + h - 1, x + w, y + 1, Col1
 END SUB
 
 SUB GetStats (who, text$, x, y, w, h, state)
-text$ = WTData(who)
-x = WGData(who, 1)
-y = WGData(who, 2)
-        IF WGData(who, 3) < 90 THEN WGData(who, 3) = 90
-        IF WGData(who, 4) < TtlHeight + 6 THEN WGData(who, 4) = TtlHeight + 6
-w = WGData(who, 3)
-h = WGData(who, 4)
-
-state = WGData(who, 5)
+text$ = HText(who)
+b = HBase(who)
+IF Heap(b + WfW) < 90 THEN Heap(b + WfW) = 90
+IF Heap(b + WfH) < TtlHeight + 6 THEN Heap(b + WfH) = TtlHeight + 6
+x = Heap(b + WfX)
+y = Heap(b + WfY)
+w = Heap(b + WfW)
+h = Heap(b + WfH)
+state = Heap(b + WfState)
 IF state = 0 THEN h = TtlHeight
-IF state = 1 THEN
-END IF
 IF state = 2 THEN w = 640: h = 480: x = 0: y = 0
-
-
 END SUB
 
 '@@INIT-BEGIN
@@ -471,36 +452,25 @@ END IF
 END SUB
 '@@MOUSE-END
 
-'Make a window in the first free slot and put it in front. The slot is WNew, 0
-'when there is none.
+'Make a window and put it in front. The window is WNew, 0 when the heap had no
+'room.
 SUB NewWin (text$, x, y, w, h)
-WNew = 0
-s = 1
-DO WHILE s <= WNMax
-        IF WGData(s, 0) = 0 THEN EXIT DO
-        s = s + 1
-LOOP
-IF s > WNMax THEN
-        OomFlag = 2
-        EXIT SUB
-END IF
-WNew = s
+WNew = MemAlloc(0, KWin, WinWords)
+IF WNew = 0 THEN EXIT SUB
+HOwner(WNew) = WNew
+HText(WNew) = text$
+HSet WNew, WfX, x
+HSet WNew, WfY, y
+HSet WNew, WfW, w
+HSet WNew, WfH, h
+HSet WNew, WfState, 1
 WNumber = WNumber + 1
-WGData(s, 0) = 1
-WGData(s, 1) = x
-WGData(s, 2) = y
-WGData(s, 3) = w
-WGData(s, 4) = h
-WGData(s, 5) = 1
-WGData(s, 6) = 0
-WGData(s, 7) = 0
-WTData(s) = text$
-WOrder(WNumber) = s
-WinMakeHighest s
+WOrder(WNumber) = WNew
+WinMakeHighest WNew
 END SUB
 
-'Close a window: it leaves the order, its controls die, the heap blocks it owns
-'are freed and compacted, and the area it covered is repainted.
+'Close a window: it leaves the order, everything it owns (its controls, its data)
+'is freed and the heap compacted, and the area it covered is repainted.
 SUB WinClose (who)
 WinRect who, x1, y1, x2, y2
 FOR i = 1 TO WNumber
@@ -510,12 +480,9 @@ FOR i = p TO WNumber - 1
         WOrder(i) = WOrder(i + 1)
 NEXT
 WNumber = WNumber - 1
-WGData(who, 0) = 0
 MemFreeAll who
-FOR i = 1 TO CtlCount
-        IF Ctl(i).win = who THEN Ctl(i).win = 0
-NEXT
-IF CtlFocus > 0 THEN IF Ctl(CtlFocus).win = 0 THEN CtlFocus = 0
+IF HSize(CtlFocus) = 0 THEN CtlFocus = 0
+IF HSize(CtlDown) = 0 THEN CtlDown = 0
 mouse.hide
 WaitRetrace
 RepaintRect x1, y1, x2, y2
@@ -590,17 +557,17 @@ ELSE
 END IF
 END SUB
 
-'All windows and heap blocks gone.
+'All windows, controls and heap blocks gone.
 SUB WinReset
 WNumber = 0
-FOR s = 0 TO WNMax
-        WGData(s, 0) = 0
-NEXT
 FOR h = 1 TO HeapMax
         HSize(h) = 0
+        HKind(h) = 0
 NEXT
 HeapTop = 0
-CtlReset
+CtlFocus = 0
+CtlDown = 0
+CtlEvent = 0
 END SUB
 
 '---------------------------------------------------------------------------
@@ -608,9 +575,9 @@ END SUB
 'through its handle (1 to HeapMax), so the heap can move it: a free slides every
 'block above it down. There is no separate collection pass.
 '---------------------------------------------------------------------------
-'A block of n words, zeroed, owned by a window. Returns its handle. When the heap
-'or the handles are full it returns 0 and sets OomFlag to 1.
-FUNCTION MemAlloc (owner, n)
+'A block of n words of a kind, zeroed, owned by a window. Returns its handle.
+'When the heap or the handles are full it returns 0 and sets OomFlag.
+FUNCTION MemAlloc (owner, kind, n)
 MemAlloc = 0
 IF n < 1 THEN EXIT FUNCTION
 IF HeapTop + n <= HeapWords + 1 THEN
@@ -619,6 +586,8 @@ IF HeapTop + n <= HeapWords + 1 THEN
                         HBase(h) = HeapTop
                         HSize(h) = n
                         HOwner(h) = owner
+                        HKind(h) = kind
+                        HText(h) = ""
                         FOR i = HeapTop TO HeapTop + n - 1
                                 Heap(i) = 0
                         NEXT
@@ -628,7 +597,7 @@ IF HeapTop + n <= HeapWords + 1 THEN
                 END IF
         NEXT
 END IF
-OomFlag = 1
+OomFlag = -1
 END FUNCTION
 
 SUB MemFree (h)
@@ -643,6 +612,18 @@ FOR k = 1 TO HeapMax
 NEXT
 HeapTop = HeapTop - n
 HSize(h) = 0
+HKind(h) = 0
+HText(h) = ""
+END SUB
+
+'Word f of a window or control block, and set it. No range check: the kernel
+'knows its own blocks. An app goes through MemGet and MemSet.
+FUNCTION HGet (h, f)
+HGet = Heap(HBase(h) + f)
+END FUNCTION
+
+SUB HSet (h, f, v)
+Heap(HBase(h) + f) = v
 END SUB
 
 'Free every block a window owns (what closing an instance does).
@@ -802,11 +783,11 @@ END SUB
 'Move a window and paint only what changed.
 SUB WinMoveTo (who, nx, ny)
 WinRect who, ox1, oy1, ox2, oy2
-dx = nx - WGData(who, 1)
-dy = ny - WGData(who, 2)
+dx = nx - HGet(who, WfX)
+dy = ny - HGet(who, WfY)
 IF dx = 0 AND dy = 0 THEN EXIT SUB
-WGData(who, 1) = nx
-WGData(who, 2) = ny
+HSet who, WfX, nx
+HSet who, WfY, ny
 WinRect who, nx1, ny1, nx2, ny2
 
 'The window in front shows all of itself, so its pixels can be copied. Only the
@@ -839,12 +820,12 @@ END SUB
 'Resize a window and paint only what changed.
 SUB WinSizeTo (who, nw, nh)
 WinRect who, ox1, oy1, ox2, oy2
-oldst = WGData(who, 5)
-FOR i = 1 TO CtlCount
-        IF Ctl(i).win = who THEN VisOld(i) = CtlVisible(i)
+oldst = HGet(who, WfState)
+FOR i = 1 TO HeapMax
+        IF HKind(i) = KCtl AND HOwner(i) = who THEN VisOld(i) = CtlVisible(i)
 NEXT
-WGData(who, 3) = nw
-WGData(who, 4) = nh
+HSet who, WfW, nw
+HSet who, WfH, nh
 WinRect who, nx1, ny1, nx2, ny2
 IF oldst <> 1 THEN
         RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
@@ -865,8 +846,8 @@ RepaintRect nx2 - 3, fy, nx2, ny2
 RepaintRect nx1, ny2 - 3, nx2, ny2
 IF ox2 < nx2 THEN RepaintRect ox2 - 3, fy, ox2, ny2
 IF oy2 < ny2 THEN RepaintRect nx1, oy2 - 3, nx2, oy2
-FOR i = 1 TO CtlCount
-        IF Ctl(i).win = who THEN
+FOR i = 1 TO HeapMax
+        IF HKind(i) = KCtl AND HOwner(i) = who THEN
                 IF VisOld(i) <> CtlVisible(i) THEN
                         CtlRect i, cx1, cy1, cx2, cy2
                         RepaintRect cx1, cy1, cx2, cy2
@@ -879,8 +860,8 @@ END SUB
 'Set the window state (0 rolled up, 1 normal, 2 maximised) and paint only what changed.
 SUB WinSetState (who, st)
 WinRect who, ox1, oy1, ox2, oy2
-oldst = WGData(who, 5)
-WGData(who, 5) = st
+oldst = HGet(who, WfState)
+HSet who, WfState, st
 WinRect who, nx1, ny1, nx2, ny2
 IF oldst <> 2 AND st <> 2 THEN
         'rolled up or normal before and after: same position and width, same
@@ -1189,56 +1170,38 @@ END SUB
 'control number, and the main loop reads it.
 '---------------------------------------------------------------------------
 
-'Add a control and return its number. 0 when the table is full (OomFlag 3) or the
-'window is 0, a window that could not be made.
+'Add a control to a window and return its number. 0 when the heap is full
+'(OomFlag), or when the window is 0, a window that could not be made.
 'x, y, w, h are relative to the top left of the client area.
 FUNCTION CtlAdd (win, kind, x, y, w, h, cap$)
-id = 1
-DO WHILE id <= CtlCount
-        IF Ctl(id).win = 0 THEN EXIT DO
-        id = id + 1
-LOOP
 CtlAdd = 0
 IF win < 1 THEN EXIT FUNCTION
-IF id > CtlMax THEN
-        OomFlag = 3
-        EXIT FUNCTION
-END IF
-IF id > CtlCount THEN CtlCount = id
-Ctl(id).kind = kind
-Ctl(id).win = win
-Ctl(id).x = x
-Ctl(id).y = y
-Ctl(id).w = w
-Ctl(id).h = h
-Ctl(id).chk = 0
-Ctl(id).grp = 1
-Ctl(id).cap = cap$
+id = MemAlloc(win, KCtl, CtlWords)
+IF id = 0 THEN EXIT FUNCTION
+HSet id, CfKind, kind
+HSet id, CfX, x
+HSet id, CfY, y
+HSet id, CfW, w
+HSet id, CfH, h
+HSet id, CfGrp, 1
+HText(id) = cap$
 CtlAdd = id
 END FUNCTION
 
-'Remove all controls.
-SUB CtlReset
-CtlCount = 0
-CtlFocus = 0
-CtlDown = 0
-CtlEvent = 0
-END SUB
-
 'The screen rectangle of a control, both ends included.
 SUB CtlRect (id, x1, y1, x2, y2)
-WinRect Ctl(id).win, wx1, wy1, wx2, wy2
-x1 = wx1 + 3 + Ctl(id).x
-y1 = wy1 + TtlHeight + 4 + Ctl(id).y
-x2 = x1 + Ctl(id).w - 1
-y2 = y1 + Ctl(id).h - 1
+WinRect HOwner(id), wx1, wy1, wx2, wy2
+x1 = wx1 + 3 + HGet(id, CfX)
+y1 = wy1 + TtlHeight + 4 + HGet(id, CfY)
+x2 = x1 + HGet(id, CfW) - 1
+y2 = y1 + HGet(id, CfH) - 1
 END SUB
 
 '-1 when the control is drawn: its window is not rolled up and the whole
 'control is inside the client area.
 FUNCTION CtlVisible (id)
 CtlVisible = 0
-GetStats Ctl(id).win, crap$, x, y, w, h, state
+GetStats HOwner(id), crap$, x, y, w, h, state
 IF state = 0 THEN EXIT FUNCTION
 CtlRect id, x1, y1, x2, y2
 IF x1 >= x + 3 AND y1 >= y + TtlHeight + 4 AND x2 <= x + w - 3 AND y2 <= y + h - 3 THEN CtlVisible = -1
@@ -1246,11 +1209,11 @@ END FUNCTION
 
 SUB CtlDraw (id)
 CtlRect id, x1, y1, x2, y2
-w = Ctl(id).w
-h = Ctl(id).h
-cap$ = RTRIM$(Ctl(id).cap)
+w = HGet(id, CfW)
+h = HGet(id, CfH)
+cap$ = RTRIM$(HText(id))
 ty = y1 + (h - 16) \ 2 - 1
-SELECT CASE Ctl(id).kind
+SELECT CASE HGet(id, CfKind)
 CASE CtlLabel
         CtlCap cap$, x1, ty, w, 15
 CASE CtlButton
@@ -1267,7 +1230,7 @@ CASE CtlCheck
         bx = y1 + (h - 13) \ 2
         gBox x1, bx, x1 + 12, bx + 12, 1
         gFill x1 + 1, bx + 1, x1 + 11, bx + 11, 15
-        IF Ctl(id).chk THEN
+        IF HGet(id, CfChk) THEN
                 gLine x1 + 3, bx + 3, x1 + 9, bx + 9, 0
                 gLine x1 + 3, bx + 4, x1 + 8, bx + 9, 0
                 gLine x1 + 9, bx + 3, x1 + 3, bx + 9, 0
@@ -1279,7 +1242,7 @@ CASE CtlRadio
         cy = y1 + h \ 2
         gFill cx - 6, cy - 6, cx + 6, cy + 6, 15
         gCircle cx, cy, 6, 1
-        IF Ctl(id).chk THEN gFill cx - 2, cy - 2, cx + 2, cy + 2, 0
+        IF HGet(id, CfChk) THEN gFill cx - 2, cy - 2, cx + 2, cy + 2, 0
         CtlCap cap$, x1 + 20, ty, w - 20, 15
 CASE CtlText
         IF CtlFocus = id THEN bc = 7 ELSE bc = 1
@@ -1306,17 +1269,16 @@ END SUB
 'Draw the controls of one window, in the order they were added. A control
 'outside the clip, or not entirely inside the client area, is not drawn.
 SUB CtlDrawAll (who)
-IF CtlCount = 0 THEN EXIT SUB
 GetStats who, crap$, x, y, w, h, state
 IF state = 0 THEN EXIT SUB
 ox = x + 3
 oy = y + TtlHeight + 4
-FOR i = 1 TO CtlCount
-        IF Ctl(i).win = who THEN
-                x1 = ox + Ctl(i).x
-                y1 = oy + Ctl(i).y
-                x2 = x1 + Ctl(i).w - 1
-                y2 = y1 + Ctl(i).h - 1
+FOR i = 1 TO HeapMax
+        IF HKind(i) = KCtl AND HOwner(i) = who THEN
+                x1 = ox + HGet(i, CfX)
+                y1 = oy + HGet(i, CfY)
+                x2 = x1 + HGet(i, CfW) - 1
+                y2 = y1 + HGet(i, CfH) - 1
                 IF x1 >= ox AND y1 >= oy AND x2 <= x + w - 3 AND y2 <= y + h - 3 THEN
                         IF NOT Outside(x1, y1, x2, y2) THEN CtlDraw i
                 END IF
@@ -1326,14 +1288,15 @@ END SUB
 
 'Repaint one control (and whatever covers part of it) after its state changed.
 SUB CtlRedraw (id)
-IF id < 1 OR id > CtlCount THEN EXIT SUB
+IF id < 1 OR id > HeapMax THEN EXIT SUB
+IF HKind(id) <> KCtl THEN EXIT SUB
 IF NOT CtlVisible(id) THEN EXIT SUB
 CtlRect id, x1, y1, x2, y2
 'Is a window in front of this one over the control?
 covered = 0
 FOR Cyc = 1 TO WNumber
         CW = WOrder(Cyc)
-        IF CW = Ctl(id).win THEN EXIT FOR
+        IF CW = HOwner(id) THEN EXIT FOR
         WinRect CW, wx1, wy1, wx2, wy2
         IF NOT (wx2 < x1 OR wx1 > x2 OR wy2 < y1 OR wy1 > y2) THEN
                 covered = -1
@@ -1349,8 +1312,8 @@ ELSE
         WaitRetrace
         ClipOn x1, y1, x2, y2
         gFill x1, y1, x2, y2, 15
-        FOR i = 1 TO CtlCount
-                IF Ctl(i).win = Ctl(id).win THEN
+        FOR i = 1 TO HeapMax
+                IF HKind(i) = KCtl AND HOwner(i) = HOwner(id) THEN
                         CtlRect i, ax1, ay1, ax2, ay2
                         IF NOT (ax2 < x1 OR ax1 > x2 OR ay2 < y1 OR ay1 > y2) THEN
                                 IF CtlVisible(i) THEN CtlDraw i
@@ -1366,8 +1329,8 @@ END SUB
 'Labels do not take clicks. Later controls are on top of earlier ones.
 FUNCTION CtlHit (who, mx, my)
 CtlHit = 0
-FOR i = CtlCount TO 1 STEP -1
-        IF Ctl(i).win = who AND Ctl(i).kind <> CtlLabel THEN
+FOR i = HeapMax TO 1 STEP -1
+        IF HKind(i) = KCtl AND HOwner(i) = who AND HGet(i, CfKind) <> CtlLabel THEN
                 IF CtlVisible(i) THEN
                         CtlRect i, x1, y1, x2, y2
                         IF mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2 THEN
@@ -1404,27 +1367,27 @@ END SUB
 
 'Select one radio button of its group.
 SUB CtlSelect (id)
-FOR i = 1 TO CtlCount
-        IF i <> id AND Ctl(i).kind = CtlRadio AND Ctl(i).win = Ctl(id).win AND Ctl(i).grp = Ctl(id).grp THEN
-                IF Ctl(i).chk <> 0 THEN
-                        Ctl(i).chk = 0
+FOR i = 1 TO HeapMax
+        IF i <> id AND HKind(i) = KCtl AND HGet(i, CfKind) = CtlRadio AND HOwner(i) = HOwner(id) AND HGet(i, CfGrp) = HGet(id, CfGrp) THEN
+                IF HGet(i, CfChk) <> 0 THEN
+                        HSet i, CfChk, 0
                         CtlRedraw i
                 END IF
         END IF
 NEXT
-IF Ctl(id).chk = 0 THEN
-        Ctl(id).chk = 1
+IF HGet(id, CfChk) = 0 THEN
+        HSet id, CfChk, 1
         CtlRedraw id
 END IF
 END SUB
 
 'What a click on a control does, after the button went up on it.
 SUB CtlActivate (id)
-SELECT CASE Ctl(id).kind
+SELECT CASE HGet(id, CfKind)
 CASE CtlButton
         CtlEvent = id
 CASE CtlCheck
-        IF Ctl(id).chk THEN Ctl(id).chk = 0 ELSE Ctl(id).chk = 1
+        IF HGet(id, CfChk) THEN HSet id, CfChk, 0 ELSE HSet id, CfChk, 1
         CtlRedraw id
         CtlEvent = id
 CASE CtlRadio
@@ -1438,7 +1401,7 @@ END SUB
 'Follow the mouse until the button goes up. A button looks pressed while the
 'pointer is on it; the click counts when the button goes up on it.
 SUB CtlTrack (id)
-IF Ctl(id).kind = CtlButton THEN
+IF HGet(id, CfKind) = CtlButton THEN
         CtlDown = id
         CtlRedraw id
         isin = -1
@@ -1467,13 +1430,13 @@ END SUB
 SUB CtlKey (k$)
 id = CtlFocus
 IF id = 0 OR LEN(k$) <> 1 THEN EXIT SUB
-IF Ctl(id).kind <> CtlText THEN EXIT SUB
+IF HGet(id, CfKind) <> CtlText THEN EXIT SUB
 c = ASC(k$)
-cur$ = RTRIM$(Ctl(id).cap)
+cur$ = RTRIM$(HText(id))
 SELECT CASE c
 CASE 8
         IF LEN(cur$) > 0 THEN
-                Ctl(id).cap = LEFT$(cur$, LEN(cur$) - 1)
+                HText(id) = LEFT$(cur$, LEN(cur$) - 1)
                 CtlRedraw id
         END IF
 CASE 13
@@ -1482,28 +1445,28 @@ CASE 27
         CtlSetFocus 0
 CASE IS >= 32
         IF LEN(cur$) < 40 THEN
-                Ctl(id).cap = cur$ + k$
+                HText(id) = cur$ + k$
                 CtlRedraw id
         END IF
 END SELECT
 END SUB
 
 SUB CtlSetText (id, t$)
-Ctl(id).cap = t$
+HText(id) = t$
 CtlRedraw id
 END SUB
 
 FUNCTION CtlGetText$ (id)
-CtlGetText$ = RTRIM$(Ctl(id).cap)
+CtlGetText$ = RTRIM$(HText(id))
 END FUNCTION
 
 'Check or uncheck a checkbox or radio button. Use CtlSelect for a radio button
 'that must exclude the others of its group.
 SUB CtlSetChecked (id, v)
-IF v <> 0 THEN Ctl(id).chk = 1 ELSE Ctl(id).chk = 0
+IF v <> 0 THEN HSet id, CfChk, 1 ELSE HSet id, CfChk, 0
 CtlRedraw id
 END SUB
 
 FUNCTION CtlGetChecked (id)
-IF Ctl(id).chk <> 0 THEN CtlGetChecked = -1 ELSE CtlGetChecked = 0
+IF HGet(id, CfChk) <> 0 THEN CtlGetChecked = -1 ELSE CtlGetChecked = 0
 END FUNCTION
