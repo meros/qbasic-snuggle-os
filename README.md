@@ -4,6 +4,9 @@ A small windowed desktop for **QBasic 1.1**, run in **DOSBox**. It began as a
 1999 hobby program; this tree is a rebuild of it as a system with a kernel, apps,
 an API, a test suite and a chat service, all built with **Nix**.
 
+Live at https://snuggleos-vtmxwzy3uq-lz.a.run.app (type `SNUGGLE` for this
+version, `ORIGINAL` for the 1999 code base).
+
 ```
 nix run                      # the desktop, in a DOSBox window
 nix run .#snuggle -- --help  # the tool: build, docs, test, shot
