@@ -110,8 +110,9 @@ test again when that happens.
 
 The cases run as three programs (window, controls, speed), and the test build
 leaves out the mouse library, the hit tests, the drag loops and the palette
-setup. QBasic 1.1 does not start a program of about 55 KB of code (52.9 KB
-starts, 55.5 KB does not; comments do not count), and `SNUGGLE.BAS` is 50 KB.
+setup, to keep the test build inside QBasic's memory (code and arrays share
+about 160 KB). `scripts/test.sh` prints the memory left after the first paint,
+about 75 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 ## Layout
 

@@ -1,17 +1,18 @@
 """Splice the test code into SNUGGLE.BAS and print the result (LF line endings).
 
---cases <window|controls|speed> picks the cases (QBasic starts only a program of
-about 53 KB of code, so the cases run as separate programs).
-With --smoke it prints SNUGGLE.BAS with a stop after the first paint instead.
+--cases <window|controls|speed> picks the cases (the test code, the reference code
+and the program share the 160 KB QBasic gives code and arrays, so the cases run
+as separate programs).
+With --smoke it prints SNUGGLE.BAS with a stop after the first paint instead; the
+program writes the free memory (FRE(-1)) it has left at that point.
 
 The program under test is the real SNUGGLE.BAS. Three things change:
   - the run section ('@@RUN-BEGIN .. '@@RUN-END) becomes the test body,
   - the drawing layer ('@@GFX-BEGIN .. '@@GFX-END) becomes a counting layer,
   - the hit tests, the drag loops and the palette setup are left out or stubbed
     (the cases call the engine directly),
-  - the vendored mouse library ('@@MOUSE-BEGIN .. '@@MOUSE-END) becomes stubs: a
-    QBasic 1.1 program of about 55 KB of code does not start (see
-    docs/APPS-AND-API.md), and the cases need no mouse,
+  - the mouse library ('@@MOUSE-BEGIN .. '@@MOUSE-END) becomes stubs: the test
+    build needs the memory (see docs/APPS-AND-API.md), and the cases need no mouse,
   - the test globals, declares and subs are added.
 """
 import pathlib
@@ -52,7 +53,7 @@ if "--smoke" in sys.argv:
     marker = "refresh\n\nDO\n"
     if src.count(marker) != 1:
         sys.exit("build_test: start of the main loop not found")
-    sys.stdout.write(src.replace(marker, 'refresh\nOPEN "SMOKE.TXT" FOR OUTPUT AS #1\nPRINT #1, "started"\nCLOSE #1\nSYSTEM\n\nDO\n'))
+    sys.stdout.write(src.replace(marker, 'refresh\nOPEN "SMOKE.TXT" FOR OUTPUT AS #1\nPRINT #1, "started"; FRE(-1)\nCLOSE #1\nSYSTEM\n\nDO\n'))
     sys.exit(0)
 
 out = swap(src, "RUN-BEGIN", "RUN-END", part("run_body.bas"))

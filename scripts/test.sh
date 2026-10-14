@@ -31,6 +31,15 @@ status=0
 echo "== smoke: SNUGGLE.BAS starts and paints"
 if run_dosbox SMOKE.BAS SMOKE.TXT '^started'; then
   echo "PASS SNUGGLE.BAS starts, opens its windows and paints"
+  # QBasic gives code and arrays one pool of about 160 KB, and the program needs
+  # about 18 KB of it free to run (measured, docs/APPS-AND-API.md). What is left
+  # after the first paint is the room for apps.
+  free="$(awk '{print $2}' "$build/SMOKE.TXT" | tr -d '\r')"
+  echo "     free memory after the first paint: ${free} bytes (floor ${MEM_FLOOR:-25000})"
+  if [ "${free:-0}" -lt "${MEM_FLOOR:-25000}" ]; then
+    echo "FAIL less than ${MEM_FLOOR:-25000} bytes of QBasic memory left"
+    exit 2
+  fi
 else
   echo "FAIL SNUGGLE.BAS did not reach its main loop (syntax or runtime error, or DOSBox crashed five times)"
   exit 2

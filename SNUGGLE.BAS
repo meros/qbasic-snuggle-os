@@ -6,15 +6,11 @@
 
 
 DECLARE FUNCTION CheckIfWinBtn% (who%)
-DECLARE FUNCTION CheckIfWinBttn% (who%)
-DECLARE SUB mouse.setgcr (data$)
 DECLARE SUB refresh ()
 DECLARE SUB StartXYDrag (what%, who%)
 DECLARE FUNCTION CheckIfBorder% (what%, who%)
-DECLARE SUB StartXDrag (who%)
 DECLARE SUB WinPutTop (who%)
 DECLARE FUNCTION CheckIfWinArea% (who%)
-DECLARE FUNCTION CheckWinArea% (who%)
 DECLARE SUB WinMakeHighest (num%)
 DECLARE SUB WinMoveTo (who%, nx%, ny%)
 DECLARE SUB WinSizeTo (who%, nw%, nh%)
@@ -58,6 +54,8 @@ DECLARE SUB gBox (x1%, y1%, x2%, y2%, c%)
 DECLARE SUB gLine (x1%, y1%, x2%, y2%, c%)
 DECLARE SUB gPset (x%, y%, c%)
 DECLARE SUB StartDrag (who%)
+DECLARE SUB MouseCall (ax%, bx%, cx%, dx%)
+DECLARE SUB Pal (i%, r%, g%, b%)
 DECLARE SUB mouse.getpos (x%, y%)
 DECLARE FUNCTION CheckIfTitle% (who%)
 DECLARE SUB NewWin (text$, x%, y%, w%, h%)
@@ -71,22 +69,14 @@ DECLARE SUB QuitButton (x%, y%)
 DECLARE SUB cout (text$, sx%, sy%, colo%, Lengh%, break%)
 DECLARE SUB Init ()
 DECLARE SUB CoutSetup ()
-DECLARE FUNCTION StringFind% (Strng$, start%, what$)
 DECLARE SUB mouse.show ()
 DECLARE SUB mouse.hide ()
 DECLARE FUNCTION mouse.enable% ()
 DECLARE FUNCTION mouse.getbutton% ()
-DECLARE FUNCTION mouse.loadgcr$ (filename$)
 DECLARE SUB WinDrwBrd (x1%, y1%, x2%, y2%)
 DECLARE SUB WinDrwTtl (x1%, y1%, x2%, y2%)
 '***************
 CONST LB = &H1      'constant for left button
-CONST RB = &H2      'constant for right button
-CONST CB = &H4      'constant for center button
-CONST DC = &H8      'constant for double click (reserved for next release)
-CONST shift = &H3
-CONST CTRL = &H4
-CONST ALT = &H8
 '***************
 CONST TtlHeight = 18
 'Controls
@@ -109,7 +99,7 @@ TYPE CtlRec
 END TYPE
 DIM SHARED GlyphFirst(255) AS INTEGER   'glyph n is GlyphRuns(n) horizontal runs, from GlyphData(GlyphFirst(n))
 DIM SHARED GlyphRuns(255) AS INTEGER    'a run is packed as row * 64 + first column * 8 + last column
-DIM SHARED GlyphData(5000) AS INTEGER
+DIM SHARED GlyphData(3600) AS INTEGER   'the screen font needs 3167 runs
 DIM SHARED GlyphBuf(40) AS INTEGER
 DIM SHARED GlyphTop AS INTEGER
 
@@ -144,7 +134,7 @@ DIM SHARED SprFg(2) AS INTEGER          'text styles: colour of the glyph and of
 DIM SHARED SprBg(2) AS INTEGER
 DIM SHARED CoutBg AS INTEGER            'background colour behind the text cout draws, -1 for unknown
 DIM SHARED NoSync AS INTEGER           'the tests set it: no wait for the retrace
-DIM SHARED BlitBuf(8100) AS INTEGER      'one band of screen rows, for BlitMove
+DIM SHARED BlitBuf(4100) AS INTEGER      'one band of screen rows (8000 bytes), for BlitMove
 DIM SHARED ClipActive AS INTEGER        'cout skips glyphs outside the clip
 DIM SHARED ClipLX1 AS INTEGER
 DIM SHARED ClipLY1 AS INTEGER
@@ -152,26 +142,15 @@ DIM SHARED ClipLX2 AS INTEGER
 DIM SHARED ClipLY2 AS INTEGER
 DIM SHARED ClipColBuf(1000) AS INTEGER  '1 x 480 pixels, four planes
 DIM SHARED ClipRowBuf(170) AS INTEGER   '640 x 1 pixels
-DIM SHARED move AS STRING
-move = mouse.loadgcr("move")
-DIM SHARED pointer AS STRING
-pointer = mouse.loadgcr("pointer")
-DIM SHARED vertical AS STRING
-vertical = mouse.loadgcr("vertical")
-DIM SHARED horizont AS STRING
-horizont = mouse.loadgcr("horizont")
-DIM SHARED diagonal AS STRING
-diagonal = mouse.loadgcr("diagonal")
+DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
+DIM SHARED MouseOK AS INTEGER
+DIM SHARED MouseVis AS INTEGER
 
-DIM SHARED SnuggleFolder AS STRING
-'SnuggleFolder = "c:\develop\qbasic\snuggle\"
-'CHDIR (SnuggleFolder)
 
 DEFINT A-Z
 '@@RUN-BEGIN
 SCREEN 12
 enabled% = mouse.enable
-mouse.setgcr pointer
 mouse.show
 Init
 CLS
@@ -360,10 +339,7 @@ END SUB
 'of the plane is cut into runs of set pixels.
 SUB CoutSetup
 COLOR 1
-OUT &H3C8, 1
-OUT &H3C9, 0
-OUT &H3C9, 0
-OUT &H3C9, 0
+Pal 1, 0, 0, 0
 
 GlyphTop = 0
 FOR a = 15 TO 255
@@ -373,26 +349,17 @@ FOR a = 15 TO 255
         GlyphFirst(a) = GlyphTop
         FOR r = 0 TO 15
                 m = GlyphBuf(2 + r * 2) AND &HFF
-                IF m <> 0 THEN
-                        bit = 128
-                        x0 = -1
-                        FOR x = 0 TO 7
-                                IF (m AND bit) <> 0 THEN
-                                        IF x0 < 0 THEN x0 = x
-                                ELSE
-                                        IF x0 >= 0 THEN
-                                                GlyphData(GlyphTop) = r * 64 + x0 * 8 + x - 1
-                                                GlyphTop = GlyphTop + 1
-                                                x0 = -1
-                                        END IF
-                                END IF
-                                bit = bit \ 2
-                        NEXT
-                        IF x0 >= 0 THEN
-                                GlyphData(GlyphTop) = r * 64 + x0 * 8 + 7
-                                GlyphTop = GlyphTop + 1
+                bit = 128
+                x0 = -1
+                FOR x = 0 TO 8
+                        IF (m AND bit) <> 0 THEN
+                                IF x0 < 0 THEN x0 = x
+                        ELSEIF x0 >= 0 THEN
+                                IF GlyphTop < 3600 THEN GlyphData(GlyphTop) = r * 64 + x0 * 8 + x - 1: GlyphTop = GlyphTop + 1
+                                x0 = -1
                         END IF
-                END IF
+                        bit = bit \ 2
+                NEXT
         NEXT
         GlyphRuns(a) = GlyphTop - GlyphFirst(a)
 NEXT
@@ -411,6 +378,13 @@ FOR st = 0 TO 2
         NEXT
 NEXT
 
+END SUB
+
+SUB Pal (i, r, g, b)
+OUT &H3C8, i
+OUT &H3C9, r
+OUT &H3C9, g
+OUT &H3C9, b
 END SUB
 
 SUB DrwBtn (x, y, w, h, up)
@@ -447,46 +421,14 @@ END SUB
 '@@INIT-BEGIN
 SUB Init
 CoutSetup
-OUT &H3C8, 0
-OUT &H3C9, 0
-OUT &H3C9, 0
-OUT &H3C9, 0
-
-OUT &H3C8, 1
-OUT &H3C9, 22
-OUT &H3C9, 22
-OUT &H3C9, 22
-
-OUT &H3C8, 2
-OUT &H3C9, 32
-OUT &H3C9, 32
-OUT &H3C9, 32
-
-OUT &H3C8, 3
-OUT &H3C9, 42
-OUT &H3C9, 42
-OUT &H3C9, 42
-
-OUT &H3C8, 4
-OUT &H3C9, 0
-OUT &H3C9, 40
-OUT &H3C9, 40
-
-OUT &H3C8, 5
-OUT &H3C9, 0
-OUT &H3C9, 0
-OUT &H3C9, 22
-
-OUT &H3C8, 6
-OUT &H3C9, 0
-OUT &H3C9, 0
-OUT &H3C9, 32
-
-OUT &H3C8, 7
-OUT &H3C9, 0
-OUT &H3C9, 0
-OUT &H3C9, 42
-
+Pal 0, 0, 0, 0
+Pal 1, 22, 22, 22
+Pal 2, 32, 32, 32
+Pal 3, 42, 42, 42
+Pal 4, 0, 40, 40
+Pal 5, 0, 0, 22
+Pal 6, 0, 0, 32
+Pal 7, 0, 0, 42
 END SUB
 '@@INIT-END
 
@@ -503,241 +445,53 @@ gBox x + 2, y + 5, x + 10, y + 7, 1
 END SUB
 
 '@@MOUSE-BEGIN
-'Enable mouse for usage. Must be run before any mouse functions (other than
-'cursor-loading functions) or none will work.
-'RETURN:
-'  -1 (&hFFFF) if mouse found, else 0.
-'EXAMPLE:
-'  IF NOT mouse.enable THEN PRINT "No mouse" ELSE PRINT "Mouse found"
+'Mouse driver (int 33h) through a machine-code string and CALL ABSOLUTE. The
+'machine code is from Mark K. Kim's Vmouse routine; the five procedures that
+'Snuggle OS uses share one call, MouseCall. ax, bx, cx and dx go in and come
+'back as the registers after the call.
+SUB MouseCall (ax, bx, cx, dx)
+ofs = SADD(MouseAsm)
+DEF SEG = VARSEG(MouseAsm)
+CALL ABSOLUTE(d, d, d, d, ax, bx, cx, dx, 0, ofs)
+DEF SEG
+END SUB
+
+'-1 when a mouse driver is installed, else 0. Run it before any other mouse call.
 FUNCTION mouse.enable%
-  SHARED mouse.exist AS INTEGER
-
-  'store machine language data
-  SHARED mouse.asm$
-  mouse.asm$ = ""
-  mouse.asm$ = mouse.asm$ + CHR$(&H55)                            'push bp
-  mouse.asm$ = mouse.asm$ + CHR$(&H89) + CHR$(&HE5)               'mov  bp, sp
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&HE)   'mov  bx, [bp+0e]
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H7)                'mov  ax, [bx]
-  mouse.asm$ = mouse.asm$ + CHR$(&H50)                            'push ax
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&HC)   'mov  bx, [bp+0c]
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H7)                'mov  cx, [ax]
-  mouse.asm$ = mouse.asm$ + CHR$(&H50)                            'push ax
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&HA)   'mov  bx, [bp+0a]
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&HF)                'mov  cx, [bx]
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&H8)   'mov  bx, [bp+08]
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H17)               'mov  dx, [bx]
-'  mouse.asm$ = mouse.asm$ + CHR$(&H1E)                            'push ds
-'  mouse.asm$ = mouse.asm$ + CHR$(&H7)                             'pop  es
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&H6)   'mov  bx, [bp+06]
-  mouse.asm$ = mouse.asm$ + CHR$(&H8E) + CHR$(&H7)                'mov  es, [bx]
-  mouse.asm$ = mouse.asm$ + CHR$(&H5B)                            'pop  bx
-  mouse.asm$ = mouse.asm$ + CHR$(&H58)                            'pop  ax
-  mouse.asm$ = mouse.asm$ + CHR$(&HCD) + CHR$(&H33)               'int  33h
-  mouse.asm$ = mouse.asm$ + CHR$(&H53)                            'push bx
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&HE)   'mov  bx, [bp+0e]
-  mouse.asm$ = mouse.asm$ + CHR$(&H89) + CHR$(&H7)                'mov  [bx], ax
-  mouse.asm$ = mouse.asm$ + CHR$(&H58)                            'pop  ax
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&HC)   'mov  bx, [bp+0c]
-  mouse.asm$ = mouse.asm$ + CHR$(&H89) + CHR$(&H7)                'mov  [bx], ax
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&HA)   'mov  bx, [bp+0a]
-  mouse.asm$ = mouse.asm$ + CHR$(&H89) + CHR$(&HF)                'mov  [bx], cx
-  mouse.asm$ = mouse.asm$ + CHR$(&H8B) + CHR$(&H5E) + CHR$(&H8)   'mov  bx, [bp+08]
-  mouse.asm$ = mouse.asm$ + CHR$(&H89) + CHR$(&H17)               'mov  [bx], dx
-  mouse.asm$ = mouse.asm$ + CHR$(&H5D)                            'pop  bp
-  mouse.asm$ = mouse.asm$ + CHR$(&HCA) + CHR$(&H12) + CHR$(&H0)   'retf 12
-
-  'initialize and check mouse existance
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  ax% = 0
-  DEF SEG = mouse.asmseg%
-  CALL absolute(dummy%, dummy%, dummy%, dummy%, ax%, 0, 0, 0, 0, mouse.asmoff%)
-  DEF SEG
-  mouse.exist = ax%
-
-  mouse.enable = mouse.exist
+h$ = "5589E58B5E0E8B07508B5E0C8B07508B5E0A8B0F8B5E088B178B5E068E075B58CD33538B5E0E8907588B5E0C89078B5E0A890F8B5E0889175DCA1200"
+MouseAsm = ""
+FOR i = 1 TO LEN(h$) STEP 2
+        MouseAsm = MouseAsm + CHR$(VAL("&H" + MID$(h$, i, 2)))
+NEXT
+MouseOK = 0
+MouseCall MouseOK, b, c, d
+mouse.enable = MouseOK
 END FUNCTION
 
-'Gets the status of mouse buttons.
-'COMMENT:
-'* Using mouse.get() function is recommended instead when using both
-'  mouse.getbutton() and mouse.getpos() functions.
-'RETURN:
-'* An integer value:
-'  * LB for Left Button
-'  * RB for Right Button
-'  * CB for Center Button (if any)
-'  * or combination (left button and right button makes buttons% = LB + RB)
-'    including double clicks (ie - LB + DC).
-'* LB, RB, and CB are mouse constants found in the main module.
-'EXAMPLE:
-'  CLS
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    buttons% = mouse.getbutton
-'    LOCATE 1, 1: PRINT USING "####"; buttons%
-'  LOOP WHILE INKEY$ = ""
-'  mouse.disable
+'Buttons that are down: LB for the left button.
 FUNCTION mouse.getbutton%
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H3, bx%, 0, 0, 0, mouse.asmoff%)
-   
-    DEF SEG
-  END IF
-  ret% = 0
- 
-  IF bx% AND &H1 THEN ret% = ret% OR LB
-  IF bx% AND &H2 THEN ret% = ret% OR RB
-  IF bx% AND &H4 THEN ret% = ret% OR CB
-  mouse.getbutton% = ret%
+bx = 0
+IF MouseOK THEN MouseCall 3, bx, c, d
+mouse.getbutton = bx AND 7
 END FUNCTION
 
-'Gets mouse coordinates.
-'COMMENT:
-'* Coordinates are in pixels, even if the screen is in text mode.
-'COMMENT:
-'* Using mouse.get() function is recommended instead when using both
-'  mouse.getpos() and mouse.getbutton() functions.
-'INPUT:
-'* x% = integer variable to store x coordinate
-'* y% = integer variable to store y coordinate
-'EXAMPLE:
-'  CLS
-'  enabled% = mouse.enable
-'  mouse.show
-'  DO
-'    mouse.getpos x%, y%
-'    LOCATE 1, 1: PRINT USING "####  ####"; x%; y%
-'  LOOP WHILE INKEY$ = ""
-'  mouse.disable
-SUB mouse.getpos (x%, y%)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist THEN
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H3, 0, x%, y%, 0, mouse.asmoff%)
-    DEF SEG
-  END IF
+'Pointer position in pixels.
+SUB mouse.getpos (x, y)
+IF MouseOK THEN MouseCall 3, b, x, y
 END SUB
 
-'Hides mouse cursor
-'EXAMPLE:
-'  enabled% = mouse.enable  'enable mouse
-'  mouse.show               'show mouse
-'  a$ = INPUT$(1)           'pause
-'  mouse.hide               'hide mouse
-'  a$ = INPUT$(1)           'pause
-'  mouse.disable            'disable mouse
 SUB mouse.hide
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  SHARED mouse.visible AS INTEGER
-  IF mouse.exist AND mouse.visible THEN
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H2, 0, 0, 0, 0, mouse.asmoff%)
-    DEF SEG
-    mouse.visible = 0
-  END IF
+IF MouseOK AND MouseVis THEN
+        MouseCall 2, b, c, d
+        MouseVis = 0
+END IF
 END SUB
 
-'Loads the graphics cursor
-'COMMENT:
-'* Requies MS Mouse driver version 3.0 or compatible
-'INPUT:
-'* filename$ is the file name to input the graphics cursor's data from.
-'* If filename$ has no extention, it defaults to .GCR (Graphics CuRsor)
-'  extention.
-'RETURN:
-'* Returns the graphics cursor data in the string form.
-'EXAMPLE:
-'  SCREEN 9   'requires EGA or better
-'  enabled% = mouse.enable
-'  mouse.show
-'  data$ = mouse.loadGCR$("cursor.gcr")
-'  mouse.setGCR data$
-FUNCTION mouse.loadgcr$ (filename$)
-  IF INSTR(filename$, ".") = 0 THEN filename$ = filename$ + ".GCR"
-
-  filenumber% = FREEFILE
-  OPEN filename$ FOR BINARY AS filenumber%
-    strn$ = SPACE$(3)
-    GET #filenumber%, 1, strn$
-    IF strn$ = "GCR" THEN
-      strn$ = SPACE$(69)
-      GET #filenumber%, 1, strn$
-    ELSE strn$ = ""
-    END IF
-  CLOSE filenumber%
-  mouse.loadgcr$ = strn$
-END FUNCTION
-
-'Changes the graphics cursor
-'COMMENT:
-'* Requies MS Mouse driver version 3.0 or compatible
-'INPUT:
-'* data$ is the graphics cursor data gotten from a file using the function
-'  mouse.loadGCR().
-'EXAMPLE:
-'  SCREEN 9   'requires EGA or better
-'  enabled% = mouse.enable
-'  mouse.show
-'  data$ = mouse.loadGCR$("cursor.gcr")
-'  mouse.setGCR data$
-SUB mouse.setgcr (data$)
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  IF mouse.exist AND LEN(data$) = 69 AND LEFT$(data$, 3) = "GCR" THEN
-    'get hotx value
-    hotxstr$ = MID$(data$, 68, 1)
-    DEF SEG = VARSEG(hotxstr$)
-    bx% = PEEK(SADD(hotxstr$))
-    DEF SEG
-    'get hoty value
-    hotystr$ = MID$(data$, 69, 1)
-    DEF SEG = VARSEG(hotystr$)
-    cx% = PEEK(SADD(hotystr$))
-    DEF SEG
-    'get image shape values
-    dx% = SADD(data$) + 3
-    es% = VARSEG(data$)
-    'execute
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H9, bx%, cx%, dx%, es%, mouse.asmoff%)
-    DEF SEG
-  END IF
-END SUB
-
-'Shows the mouse. Must have been enabled first.
-'EXAMPLE:
-'  enabled% = mouse.enable  'enable mouse
-'  mouse.show               'show mouse
-'  a$ = INPUT$(1)           'pause
-'  mouse.disable            'disable mouse
 SUB mouse.show
-  SHARED mouse.exist AS INTEGER
-  SHARED mouse.asm$
-  mouse.asmseg% = VARSEG(mouse.asm$)
-  mouse.asmoff% = SADD(mouse.asm$)
-  SHARED mouse.visible AS INTEGER
-  IF mouse.exist AND NOT mouse.visible THEN
-    DEF SEG = mouse.asmseg%
-    CALL absolute(dummy%, dummy%, dummy%, dummy%, &H1, 0, 0, 0, 0, mouse.asmoff%)
-    DEF SEG
-    mouse.visible = 1
-  END IF
+IF MouseOK AND NOT MouseVis THEN
+        MouseCall 1, b, c, d
+        MouseVis = 1
+END IF
 END SUB
 '@@MOUSE-END
 
@@ -771,7 +525,6 @@ END SUB
 
 '@@DRAG-BEGIN
 SUB StartDrag (who)
-mouse.setgcr move
 mouse.getpos ox, oy
         x = ox: y = oy
         GetStats who, crap$, wx, wy, ww, wh, wstate
@@ -780,17 +533,9 @@ DO
         mouse.getpos x, y
         IF lx <> x OR ly <> y THEN WinMoveTo who, wx + (x - ox), wy + (y - oy)
 LOOP UNTIL mouse.getbutton <> LB
-mouse.hide
-mouse.setgcr pointer
-mouse.show
 END SUB
 
 SUB StartXYDrag (what, who)
-mouse.hide
-IF what = 1 THEN mouse.setgcr horizont
-IF what = 2 THEN mouse.setgcr vertical
-IF what = 3 THEN mouse.setgcr diagonal
-mouse.show
 mouse.getpos ox, oy
         x = ox: y = oy
         GetStats who, crap$, wx, wy, ww, wh, wstate
@@ -804,22 +549,8 @@ DO
                 WinSizeTo who, nw, nh
         END IF
 LOOP UNTIL mouse.getbutton <> LB
-mouse.hide
-mouse.setgcr pointer
-mouse.show
-
 END SUB
 
-FUNCTION StringFind (Strng$, start, what$)
-FOR a = start TO LEN(Strng$) + 1
-IF a <= LEN(Strng$) THEN
-        IF MID$(Strng$, a, 1) = LTRIM$(RTRIM$(what$)) THEN
-                EXIT FOR
-        END IF
-END IF
-NEXT
-StringFind = a
-END FUNCTION
 '@@DRAG-END
 
 SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
@@ -1143,7 +874,7 @@ END SUB
 'in the direction that never overwrites rows still to be read.
 SUB BlitMove (x1, y1, x2, y2, dx, dy)
 rowbytes = 4 * (((x2 - x1 + 1) + 7) \ 8)
-rows = 16000 \ rowbytes
+rows = 8000 \ rowbytes
 IF rows < 1 THEN rows = 1
 IF dy > 0 THEN
         by2 = y2

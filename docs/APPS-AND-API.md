@@ -25,7 +25,7 @@ setup as `scripts/test.sh`).
 | Does `CHAIN` keep the graphics mode and the pixels on screen? | Yes. `POINT(20, 20)` returned the colour drawn by the first program, and the mode was still graphics. | same test |
 | Does `$INCLUDE` of a `.BI` file (a `CONST` and a `DECLARE`) work? | No. The program did not start (no output file, run stalled). I could not see the error text. | `'$INCLUDE: 'INCL.BI'` |
 | Does the screen survive `RUN "other.bas"`? | Not shown. `POINT` after `RUN` stalled with an empty output file, which fits a reset to text mode. I did not confirm that separately. | `RN.BAS` |
-| How much code can one QBasic 1.1 program hold? | A 52.9 KB source file starts and a 55.5 KB one does not. The same 50 KB program padded with comments to 62 KB starts, so the limit is code, not file size. The mechanism is not known. | `DUM1` to `DUM4`: the passing 50 KB test build plus 1 to 4 procedures of 40 statements |
+| How much code can one QBasic 1.1 program hold? | Source size is not the limit. Code and static arrays share one pool of about 160 KB (`FRE(-1)` is 159,824 in an empty program). A byte of source costs about 1 byte of the pool, comments cost nothing, and an `INTEGER` array costs 2 bytes per element. A program starts when about 20 KB of the pool is still free at its first line (it starts with 20.6 KB free and does not start with about 18 KB). 125 KB of source in 90 procedures starts when there are no arrays. An earlier version of this note gave 55 KB as the limit; that came from test builds that also carried large arrays. | `scripts/test.sh` prints the free pool after the first paint; probes: `SNUGGLE.BAS` plus 8 to 44 dummy procedures of 40 statements |
 | Can QBasic 1.1 build an `.EXE`? | No tool for it in `qb11.zip`: the archive holds only `QBASIC.EXE` and `QBASIC.HLP`. | `unzip -l qb11.zip` |
 | Can it call a DOS interrupt? | `CALL ABSOLUTE` is built in, and `SNUGGLE.BAS` uses it for the mouse (machine code in a string). The `INTERRUPT` statement needs an external library in QBasic and QuickBASIC. | QB64 wiki pages for `CALL ABSOLUTE` and `INTERRUPT` in `docs/qbasic/` |
 
@@ -46,12 +46,15 @@ function pointers.
   turn.
 - **"Freestanding":** the source is separate; the running program is not.
 - **Cost:** low. Everything needed exists in the engine now.
-- **Limit (measured):** about 53 to 55 KB of code per program (see the table).
-  `SNUGGLE.BAS` is 50 KB now (39 KB after the unused mouse procedures were
-  removed, then the faster drawing, the glyph sprites and the controls were
-  added). That leaves about 3 KB. An app layer needs room first: the vendored
-  mouse library (about 10 KB of code, one machine-code string per call) is the
-  obvious thing to shrink, or the kernel has to be split with `CHAIN`.
+- **Limit (measured):** memory, not source size. After its first paint
+  `SNUGGLE.BAS` (41 KB of source, 52 KB of arrays) leaves 75 KB of the 160 KB
+  pool free, and a program stops starting at about 20 KB free. That is about
+  55 KB for apps, in code and arrays together (see the table). `scripts/test.sh`
+  prints the free memory and fails below 25 KB. The arrays are the cheap place
+  to save: the glyph sprites (19.6 KB), the glyph runs (7 KB) and the copy
+  buffer for moving a window (8 KB). Removing the `DECLARE` lines saves 1.9 KB
+  more and starts, and is left in because QBasic's editor writes them back.
+  Splitting the kernel with `CHAIN` is not needed.
 
 ### B. Apps as separate programs with `CHAIN`
 
@@ -163,8 +166,8 @@ I did not read the `fs` API page, so I do not list its functions here.
 
 ## Unverified
 
-- Why the code limit is where it is, and whether data (the 78 KB of font
-  arrays) counts against it.
+- Where the 20 KB of working memory goes at run time (the pool is shared, the
+  floor was measured, not read from a document).
 - Whether `COMMON` can carry arrays the size of the font tables.
 - Why `$INCLUDE` failed (the dialog text could not be read headless).
 - The js-dos `fs` and `ci` function list.
