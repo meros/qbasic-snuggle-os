@@ -68,6 +68,11 @@ jobs:
         run: |
           terraform init
           terraform workspace select "${GITHUB_REF_NAME}" || terraform workspace new "${GITHUB_REF_NAME}"
+          # The state of the 2020 deploys (Terraform 0.12) names the provider
+          # registry.terraform.io/-/google. This moves it to hashicorp/google;
+          # it does nothing when the state is already current.
+          terraform state replace-provider -auto-approve \
+            registry.terraform.io/-/google registry.terraform.io/hashicorp/google || true
           terraform apply -auto-approve
         env:
           TF_VAR_git_sha: ${{ github.sha }}
