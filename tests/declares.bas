@@ -1,1 +1,2 @@
-DECLARE SUB ClockCase ()
+DECLARE SUB CalcCase ()
+DECLARE FUNCTION CalcKeys$ (w%, k$)

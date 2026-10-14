@@ -4,6 +4,7 @@ HeapCase
 OomCase
 TimerCase
 ClockCase
+CalcCase
 END SUB
 
 SUB HeapCase
@@ -174,4 +175,43 @@ FOR i = 1 TO 16
         IF TmUsed(i) THEN armed = armed + 1
 NEXT
 Check "clock: closing it drops the timer", armed = 0, STR$(armed)
+END SUB
+
+'Press the calculator keys in k$ one after another and return the display.
+FUNCTION CalcKeys$ (w, k$)
+FOR j = 1 TO LEN(k$)
+        ch$ = MID$(k$, j, 1)
+        FOR h = 1 TO HeapMax
+                IF HKind(h) = KCtl AND HOwner(h) = w AND HText(h) = ch$ THEN
+                        CalcEvent w, h
+                        EXIT FOR
+                END IF
+        NEXT
+NEXT
+CalcKeys$ = CtlGetText$(AppGet(w, CalcDisp))
+END FUNCTION
+
+'The calculator: arithmetic through its events, and its window.
+SUB CalcCase
+Scene 1
+RepaintRect 0, 0, 639, 479
+AppLaunch AppIdCalc
+w = WNew
+Check "calc: a launch makes a window with 17 buttons and a display", HKind(w) = KWin AND CtlGetText$(AppGet(w, CalcDisp)) = "0", CtlGetText$(AppGet(w, CalcDisp))
+Check "calc: 12 + 7 =", CalcKeys$(w, "12+7=") = "19", CalcKeys$(w, "")
+Check "calc: 9 / 0 is an error", CalcKeys$(w, "C9/0=") = "Error", CalcKeys$(w, "")
+Check "calc: C clears it", CalcKeys$(w, "C") = "0", CalcKeys$(w, "")
+Check "calc: 1.5 * 2 =", CalcKeys$(w, "1.5*2=") = "3", CalcKeys$(w, "")
+Check "calc: 5 + 3 + shows 8", CalcKeys$(w, "C5+3+") = "8", CalcKeys$(w, "")
+Check "calc: ... and 2 = is 10", CalcKeys$(w, "2=") = "10", CalcKeys$(w, "")
+Check "calc: a leading zero goes", CalcKeys$(w, "C007") = "7", CalcKeys$(w, "")
+Check "calc: a second point is ignored", CalcKeys$(w, "C1..5") = "1.5", CalcKeys$(w, "")
+Check "calc: a point first is 0.", CalcKeys$(w, "C.5") = "0.5", CalcKeys$(w, "")
+Check "calc: 0.5 - 2 =", CalcKeys$(w, "-2=") = "-1.5", CalcKeys$(w, "")
+Check "calc: a new number after = starts fresh", CalcKeys$(w, "C8=6") = "6", CalcKeys$(w, "")
+Check "calc: an operator after = goes on with the result", CalcKeys$(w, "C4*5=+1=") = "21", CalcKeys$(w, "")
+Check "calc: a number too long to show is an error", CalcKeys$(w, "C9999999999*9999999999=") = "Error", CalcKeys$(w, "")
+dummy$ = CalcKeys$(w, "C2*8")
+CompareToLegacy "calc: the window after some keys"
+WinClose w
 END SUB

@@ -96,8 +96,9 @@ An app module starts with a manifest line and holds its own procedures:
 | `timer` | `SUB (win, tag)` called when its `TimerSet` runs out |
 
 To add an app, write `apps/<name>.bas`, run the builder, and build. The apps
-are Hello (`apps/hello.bas`) and Clock (`apps/clock.bas`, the system date and
-time, once a second).
+are Hello (`apps/hello.bas`), Clock (`apps/clock.bas`, the system date and
+time, once a second) and Calc (`apps/calc.bas`, + - * / on doubles, its state
+in the window's data block).
 
 | Procedure | What |
 | --- | --- |
