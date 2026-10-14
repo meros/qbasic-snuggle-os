@@ -24,7 +24,7 @@ CONST CtlText = 5
 DIM SHARED GlyphData(1023) AS INTEGER   'characters 128 to 255, 16 row bytes each (characters 32 to 127 are read from SprData)
 DIM SHARED Mask(15) AS INTEGER          'the 16 row bytes of the glyph being drawn, bit 7 is the left pixel
 
-CONST HeapWords = 1023                  'the heap: 2 KB, enough for about 13 Hello windows
+CONST HeapWords = 1023                  'the heap: 2 KB, about a dozen windows with a few controls each
 CONST HeapMax = 63                      'blocks at most
 DIM SHARED Heap(HeapWords) AS INTEGER
 DIM SHARED HBase(HeapMax) AS INTEGER    'first word of a block
@@ -34,12 +34,15 @@ DIM SHARED HKind(HeapMax) AS INTEGER    'KWin, KCtl or KData
 DIM SHARED HText(HeapMax) AS STRING     'title of a window, caption of a control
 DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
 CONST TimerMax = 16
+'@if timers
 DIM SHARED TmUsed(TimerMax) AS INTEGER         'timers: what to call and when (see TimerSet)
 DIM SHARED TmApp(TimerMax) AS INTEGER
 DIM SHARED TmWin(TimerMax) AS INTEGER
 DIM SHARED TmTag(TimerMax) AS INTEGER
 DIM SHARED TmStart(TimerMax) AS SINGLE
 DIM SHARED TmDur(TimerMax) AS SINGLE
+'@endif
+'@if immediate
 DIM SHARED UiMode AS INTEGER            'immediate mode controls: 0 draw, 1 find the one under the pointer, 2 click
 DIM SHARED UiWin AS INTEGER             'the window being painted or probed, its client area, the pointer
 DIM SHARED UiOx AS INTEGER
@@ -55,13 +58,16 @@ DIM SHARED UiHx2 AS INTEGER
 DIM SHARED UiHy2 AS INTEGER
 DIM SHARED UiDown AS INTEGER            'mode 0: the button that looks pressed, 0 for none
 DIM SHARED UiClickId AS INTEGER         'mode 2: the button that was clicked
+'@endif
 DIM SHARED ClientOpaque AS INTEGER      'WinDrwBrd leaves the client area alone: the app paints all of it
+'@if dirty
 DIM SHARED DirtyN AS INTEGER            'rectangles an app marked for repaint (WinDirty), screen coordinates
 DIM SHARED DirtyWin(8) AS INTEGER
 DIM SHARED DirtyX1(8) AS INTEGER
 DIM SHARED DirtyY1(8) AS INTEGER
 DIM SHARED DirtyX2(8) AS INTEGER
 DIM SHARED DirtyY2(8) AS INTEGER
+'@endif
 DIM SHARED QuitFlag AS INTEGER           '-1 when the user asked to leave
 DIM SHARED OomFlag AS INTEGER           '-1 when a block could not be had, set by MemAlloc
 DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
@@ -96,9 +102,11 @@ DIM SHARED Scratch(4100) AS INTEGER     'GET and PUT buffer: BlitMove uses all o
 DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
 DIM SHARED MouseOK AS INTEGER
 DIM SHARED MouseVis AS INTEGER
+'@if dock
 CONST DockBase = 32, DockExtra = 24, DockSlot = 48, DockBar = 52, DockReach = 72
 DIM SHARED DkOld(7) AS INTEGER
-DIM SHARED DockHover AS INTEGER         'the dock: where the pointer is over it (a multiple of 4), -1 for none
+DIM SHARED DockHover AS INTEGER         'the dock: where the pointer is over it (a multiple of 6), -1 for none
+'@endif
 DIM SHARED IconApp(7) AS INTEGER        'dock icons: the app they start, their name
 DIM SHARED IconText(7) AS STRING
 DIM SHARED IconCount AS INTEGER
@@ -243,6 +251,7 @@ SUB AppSet (win, i, v)
 MemSet HGet(win, WfData), i, v
 END SUB
 
+'@if blocks
 'A block of one word that holds a string, owned by a window and freed with it.
 'Returns its handle, 0 when the heap is full. BlockText$ and BlockSetText
 'read and write the string (a handle that is not a data block reads "").
@@ -265,6 +274,7 @@ IF h >= 1 AND h <= HeapMax THEN
         IF HKind(h) = KData THEN HText(h) = t$
 END IF
 END SUB
+'@endif
 
 'Repaint the client area of a window after the app changed what it shows.
 '@api Windows | Repaint the client area of a window after the app changed what it shows.
@@ -273,6 +283,7 @@ WinRect who, x1, y1, x2, y2
 RepaintOwn who, x1, y1 + TtlHeight + 1, x2, y2
 END SUB
 
+'@if dirty
 'Mark a rectangle of the client area (x, y, w, h relative to it) as changed. WinFlush
 'repaints everything marked, with one wait for the retrace. Only the marked
 'rectangles are repainted, through the clip, so a game that moves little redraws
@@ -309,6 +320,7 @@ NEXT
 DirtyN = 0
 mouse.show
 END SUB
+'@endif
 
 'Start an instance of an app and show its window.
 SUB AppLaunch (app)
@@ -468,6 +480,29 @@ Pal 7, 0, 0, 42
 END SUB
 '@@INIT-END
 
+'A push button in a rectangle, up or down. Retained buttons (CtlDraw) and
+'immediate ones (UiButton) both come here.
+SUB DrawPush (x1, y1, x2, y2, cap$, down)
+nudge = 0
+IF down THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
+gFill x1 + 2, y1 + 2, x2 - 2, y2 - 2, 3
+gLine x1 + 1, y1 + 1, x2 - 2, y1 + 1, hi
+gLine x1 + 1, y1 + 2, x1 + 1, y2 - 2, hi
+gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
+gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
+gBox x1, y1, x2, y2, 1
+w = x2 - x1 + 1
+h = y2 - y1 + 1
+CtlCap cap$, x1 + (w - LEN(cap$) * 8) \ 2 + nudge, y1 + (h - 16) \ 2 - 1 + nudge, w, 3
+END SUB
+
+'Control text in black on the background bg.
+SUB CtlCap (t$, x, y, w, bg)
+CoutBg = bg
+cout t$, x, y, 0, w, 0
+CoutBg = -1
+END SUB
+
 'A title bar button with its picture: 1 close, 2 maximise, 3 roll up.
 SUB WinBtn (x, y, kind)
 DrwBtn x, y, TtlHeight - 6, TtlHeight - 6
@@ -576,14 +611,13 @@ FOR i = p TO WNumber - 1
 NEXT
 WNumber = WNumber - 1
 MemFreeAll who
-FOR i = 1 TO TimerMax
-        IF TmWin(i) = who AND TmApp(i) > 0 THEN TmUsed(i) = 0
-NEXT
+TimersDrop who
 IF HSize(CtlFocus) = 0 THEN CtlFocus = 0
 IF HSize(CtlDown) = 0 THEN CtlDown = 0
 Repaint x1, y1, x2, y2
 END SUB
 
+'@if notice
 'A line of text on a bar at the top of the screen. The next repaint of that
 'area removes it.
 '@api Windows | Show a line of text on the bar at the bottom of the screen for 4 seconds.
@@ -594,7 +628,12 @@ cout msg$, 8, -1, 15, 624, 0
 mouse.show
 TimerSet 0, 0, 1, 4
 END SUB
+'@else
+SUB Notice (msg$)
+END SUB
+'@endif
 
+'@if immediate
 '---------------------------------------------------------------------------
 'Immediate mode controls. A button or label of an app that has a paint
 'procedure (manifest paint=) is not stored anywhere: the app declares it each
@@ -723,7 +762,16 @@ isin = (mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2)
 UiDown = 0
 IF isin THEN UiFire who, id ELSE Repaint x1, y1, x2, y2
 END FUNCTION
+'@else
+SUB UiRun (who, md)
+END SUB
 
+FUNCTION UiClick (who, mx, my)
+UiClick = 0
+END FUNCTION
+'@endif
+
+'@if timers
 '---------------------------------------------------------------------------
 'Timers. TimerSet(app, win, tag, seconds) makes the kernel call back once, when
 'the time is up, from the main loop (TimersRun): the kernel for app 0, else
@@ -769,6 +817,22 @@ FOR i = 1 TO TimerMax
         END IF
 NEXT
 END SUB
+'Drop the timers of a window that closes.
+SUB TimersDrop (who)
+FOR i = 1 TO TimerMax
+        IF TmWin(i) = who AND TmApp(i) > 0 THEN TmUsed(i) = 0
+NEXT
+END SUB
+'@else
+SUB TimerSet (app, win, tag, secs!)
+END SUB
+
+SUB TimersRun
+END SUB
+
+SUB TimersDrop (who)
+END SUB
+'@endif
 
 'Repaint the area of a window, for a window that was just made.
 SUB WinShow (who)
@@ -776,6 +840,7 @@ WinRect who, x1, y1, x2, y2
 Repaint x1, y1, x2, y2
 END SUB
 
+'@if dock
 '---------------------------------------------------------------------------
 'The dock: an icon for each app along the bottom of the screen, drawn on top of
 'the windows. The pointer over it enlarges the icons near it (DockSize), up to
@@ -906,6 +971,28 @@ DockDraw
 ClipOff
 mouse.show
 END SUB
+'@else
+SUB IconAdd (app, label$)
+END SUB
+
+FUNCTION DockAt (mx, my)
+DockAt = 0
+END FUNCTION
+
+FUNCTION DockTouches (x1, y1, x2, y2)
+DockTouches = 0
+END FUNCTION
+
+SUB DockZone (x1, y1, x2, y2)
+x1 = 0: y1 = 0: x2 = -1: y2 = -1
+END SUB
+
+SUB DockDraw
+END SUB
+
+SUB DockMove
+END SUB
+'@endif
 
 'Fill a free part of the background.
 SUB DeskFill (x1, y1, x2, y2)
@@ -1537,10 +1624,12 @@ IF Outside(x, y, x, y) THEN EXIT SUB
 PSET (x, y), c
 END SUB
 
+'@if widgets
 SUB gCircle (x, y, r, c)
 IF Outside(x - r, y - r, x + r, y + r) THEN EXIT SUB
 CIRCLE (x, y), r, c
 END SUB
+'@endif
 
 SUB gGetSprite (so)
 GET (0, 0)-(7, 15), SprData(so)
@@ -1559,6 +1648,7 @@ PUT (x, y), Scratch, PSET
 END SUB
 '@@GFX-END
 
+'@if controls
 '---------------------------------------------------------------------------
 'Controls. A control belongs to a window and is drawn in its client area, after
 'the frame, so it is repainted (and clipped) with the window. A control that
@@ -1615,6 +1705,7 @@ ty = y1 + (h - 16) \ 2 - 1
 SELECT CASE HGet(id, CfKind)
 CASE CtlLabel
         CtlCap cap$, x1, ty, w, 15
+'@if widgets
 CASE CtlButton
         DrawPush x1, y1, x2, y2, cap$, (CtlDown = id)
 CASE CtlCheck
@@ -1635,6 +1726,7 @@ CASE CtlRadio
         gCircle cx, cy, 6, 1
         IF HGet(id, CfChk) THEN gFill cx - 2, cy - 2, cx + 2, cy + 2, 0
         CtlCap cap$, x1 + 20, ty, w - 20, 15
+'@endif
 CASE CtlText
         IF CtlFocus = id THEN bc = 7 ELSE bc = 1
         gBox x1, y1, x2, y2, bc
@@ -1648,29 +1740,6 @@ CASE CtlText
                 gLine cx, y1 + 3, cx, y2 - 3, 0
         END IF
 END SELECT
-END SUB
-
-'A push button in a rectangle, up or down. Retained buttons (CtlDraw) and
-'immediate ones (UiButton) both come here.
-SUB DrawPush (x1, y1, x2, y2, cap$, down)
-nudge = 0
-IF down THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
-gFill x1 + 2, y1 + 2, x2 - 2, y2 - 2, 3
-gLine x1 + 1, y1 + 1, x2 - 2, y1 + 1, hi
-gLine x1 + 1, y1 + 2, x1 + 1, y2 - 2, hi
-gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
-gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
-gBox x1, y1, x2, y2, 1
-w = x2 - x1 + 1
-h = y2 - y1 + 1
-CtlCap cap$, x1 + (w - LEN(cap$) * 8) \ 2 + nudge, y1 + (h - 16) \ 2 - 1 + nudge, w, 3
-END SUB
-
-'Control text in black on the background bg.
-SUB CtlCap (t$, x, y, w, bg)
-CoutBg = bg
-cout t$, x, y, 0, w, 0
-CoutBg = -1
 END SUB
 
 'Draw the controls of one window, in the order they were added. A control
@@ -1779,6 +1848,7 @@ IF old > 0 THEN CtlRedraw old
 IF id > 0 THEN CtlRedraw id
 END SUB
 
+'@if widgets
 'Select one radio button of its group.
 '@api Controls | Select a radio button and clear the others of its group.
 SUB CtlSelect (id)
@@ -1795,10 +1865,15 @@ IF HGet(id, CfChk) = 0 THEN
         CtlRedraw id
 END IF
 END SUB
+'@else
+SUB CtlSelect (id)
+END SUB
+'@endif
 
 'What a click on a control does, after the button went up on it.
 SUB CtlActivate (id)
 SELECT CASE HGet(id, CfKind)
+'@if widgets
 CASE CtlButton
         CtlEvent = id
 CASE CtlCheck
@@ -1808,6 +1883,7 @@ CASE CtlCheck
 CASE CtlRadio
         CtlSelect id
         CtlEvent = id
+'@endif
 CASE CtlText
         CtlSetFocus id
 END SELECT
@@ -1816,6 +1892,7 @@ END SUB
 'Follow the mouse until the button goes up. A button looks pressed while the
 'pointer is on it; the click counts when the button goes up on it.
 SUB CtlTrack (id)
+'@if widgets
 IF HGet(id, CfKind) = CtlButton THEN
         CtlDown = id
         CtlRedraw id
@@ -1836,9 +1913,12 @@ IF HGet(id, CfKind) = CtlButton THEN
         CtlRedraw id
         IF isin THEN CtlActivate id
 ELSE
+'@endif
         DO: LOOP WHILE mouse.getbutton = LB
         CtlActivate id
+'@if widgets
 END IF
+'@endif
 END SUB
 
 'A key for the focused text box. Printable keys are added (40 characters at
@@ -1878,6 +1958,7 @@ FUNCTION CtlGetText$ (id)
 CtlGetText$ = HText(id)
 END FUNCTION
 
+'@if widgets
 'Check or uncheck a checkbox or radio button. Use CtlSelect for a radio button
 'that must exclude the others of its group.
 '@api Controls | Check or uncheck a check box or radio button.
@@ -1890,3 +1971,29 @@ END SUB
 FUNCTION CtlGetChecked (id)
 IF HGet(id, CfChk) <> 0 THEN CtlGetChecked = -1 ELSE CtlGetChecked = 0
 END FUNCTION
+'@endif
+'@else
+SUB CtlDrawAll (who)
+END SUB
+
+FUNCTION CtlVisible (id)
+CtlVisible = 0
+END FUNCTION
+
+SUB CtlRect (id, x1, y1, x2, y2)
+x1 = 0: y1 = 0: x2 = -1: y2 = -1
+END SUB
+
+FUNCTION CtlHit (who, mx, my)
+CtlHit = 0
+END FUNCTION
+
+SUB CtlTrack (id)
+END SUB
+
+SUB CtlKey (k$)
+END SUB
+
+SUB CtlSetFocus (id)
+END SUB
+'@endif

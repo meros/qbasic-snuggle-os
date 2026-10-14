@@ -36,7 +36,8 @@ GROUP_APPS = {
 }
 _group = sys.argv[sys.argv.index("--cases") + 1] if "--cases" in sys.argv else None
 if _group in GROUP_APPS:
-    src = _build.build_text(GROUP_APPS[_group])
+    # tests/fixtures/hello.bas is a test app that uses the retained controls
+    src = _build.build_text(GROUP_APPS[_group], fixtures=True)
 else:
     src = _build.build_text()
 

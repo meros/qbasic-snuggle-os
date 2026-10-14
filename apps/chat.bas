@@ -1,4 +1,4 @@
-'@app id=6 name=Chat start=ChatStart event=ChatEvent paint=ChatPaint timer=ChatTimer
+'@app id=6 name=Chat start=ChatStart event=ChatEvent paint=ChatPaint timer=ChatTimer uses=controls,immediate,timers,blocks
 'Chat: names, rooms and direct messages through the host relay, over the serial
 'port COM1 (docs/CHAT.md has the protocol). Text goes to the room you are in;
 '/name x, /join room, /dm user text and /who are commands. One window only (the

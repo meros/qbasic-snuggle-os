@@ -26,7 +26,7 @@ CONST CtlText = 5
 DIM SHARED GlyphData(1023) AS INTEGER   'characters 128 to 255, 16 row bytes each (characters 32 to 127 are read from SprData)
 DIM SHARED Mask(15) AS INTEGER          'the 16 row bytes of the glyph being drawn, bit 7 is the left pixel
 
-CONST HeapWords = 1023                  'the heap: 2 KB, enough for about 13 Hello windows
+CONST HeapWords = 1023                  'the heap: 2 KB, about a dozen windows with a few controls each
 CONST HeapMax = 63                      'blocks at most
 DIM SHARED Heap(HeapWords) AS INTEGER
 DIM SHARED HBase(HeapMax) AS INTEGER    'first word of a block
@@ -100,7 +100,7 @@ DIM SHARED MouseOK AS INTEGER
 DIM SHARED MouseVis AS INTEGER
 CONST DockBase = 32, DockExtra = 24, DockSlot = 48, DockBar = 52, DockReach = 72
 DIM SHARED DkOld(7) AS INTEGER
-DIM SHARED DockHover AS INTEGER         'the dock: where the pointer is over it (a multiple of 4), -1 for none
+DIM SHARED DockHover AS INTEGER         'the dock: where the pointer is over it (a multiple of 6), -1 for none
 DIM SHARED IconApp(7) AS INTEGER        'dock icons: the app they start, their name
 DIM SHARED IconText(7) AS STRING
 DIM SHARED IconCount AS INTEGER
@@ -327,7 +327,6 @@ ELSE
 END IF
 END SUB
 
-CONST AppIdHello = 1
 CONST AppIdClock = 2
 CONST AppIdCalc = 3
 CONST AppIdNotepad = 4
@@ -336,19 +335,15 @@ CONST AppIdChat = 6
 
 'Icons for every app, and an instance of each boot app.
 SUB AppStartAll
-IconAdd AppIdHello, "Hello"
 IconAdd AppIdClock, "Clock"
 IconAdd AppIdCalc, "Calc"
 IconAdd AppIdNotepad, "Notepad"
 IconAdd AppIdFlappy, "Flappy"
 IconAdd AppIdChat, "Chat"
-AppLaunch AppIdHello
 END SUB
 
 SUB AppRun (app)
 SELECT CASE app
-CASE AppIdHello
-        HelloStart
 CASE AppIdClock
         ClockStart
 CASE AppIdCalc
@@ -365,8 +360,6 @@ END SUB
 'A control of window win was clicked or accepted.
 SUB AppEvent (win, ctl)
 SELECT CASE HGet(win, WfApp)
-CASE AppIdHello
-        HelloEvent win, ctl
 CASE AppIdChat
         ChatEvent win, ctl
 END SELECT
@@ -375,8 +368,6 @@ END SUB
 'A timer of app set with TimerSet ran out.
 SUB AppTimer (app, win, tag)
 SELECT CASE app
-CASE AppIdHello
-        HelloTimer win, tag
 CASE AppIdClock
         ClockTimer win, tag
 CASE AppIdFlappy
@@ -427,49 +418,6 @@ CASE AppIdFlappy
         FlappyPaint win
 CASE AppIdChat
         ChatPaint win
-END SELECT
-END SUB
-
-'---- app 1: Hello (apps/hello.bas)
-'Hello: a window with a name box, a check box, three radio buttons and two
-'buttons. OK greets the name, and the greeting goes back to Ready after 5 s.
-'Clear empties the name. Data words: the control numbers.
-CONST HelloWho = 0, HelloSnd = 1, HelloRed = 2, HelloBlue = 3, HelloOk = 4, HelloWipe = 5, HelloMsg = 6
-
-SUB HelloStart
-w = AppWindow(AppIdHello, "Hello", 170, 100, 300, 240, 7)
-AppSet w, HelloWho, CtlAdd(w, CtlText, 70, 4, 200, 22, "snuggle")
-dummy = CtlAdd(w, CtlLabel, 8, 6, 60, 16, "Name:")
-AppSet w, HelloSnd, CtlAdd(w, CtlCheck, 8, 38, 170, 16, "Enable sound")
-r = CtlAdd(w, CtlRadio, 8, 64, 100, 16, "Red")
-AppSet w, HelloRed, r
-CtlSetChecked r, 1
-dummy = CtlAdd(w, CtlRadio, 8, 84, 100, 16, "Green")
-AppSet w, HelloBlue, CtlAdd(w, CtlRadio, 8, 104, 100, 16, "Blue")
-AppSet w, HelloOk, CtlAdd(w, CtlButton, 8, 140, 80, 26, "OK")
-AppSet w, HelloWipe, CtlAdd(w, CtlButton, 100, 140, 80, 26, "Clear")
-AppSet w, HelloMsg, CtlAdd(w, CtlLabel, 8, 178, 262, 16, "Ready")
-END SUB
-
-'Tag 1: the greeting goes back to Ready.
-SUB HelloTimer (w, tag)
-CtlSetText AppGet(w, HelloMsg), "Ready"
-END SUB
-
-SUB HelloEvent (w, ctl)
-msg = AppGet(w, HelloMsg)
-SELECT CASE ctl
-CASE AppGet(w, HelloOk)
-        CtlSetText msg, "Hello, " + CtlGetText$(AppGet(w, HelloWho))
-        TimerSet AppIdHello, w, 1, 5
-CASE AppGet(w, HelloWipe)
-        CtlSetText AppGet(w, HelloWho), ""
-        CtlSetText msg, "Ready"
-CASE AppGet(w, HelloSnd)
-        IF CtlGetChecked(ctl) THEN s$ = "Sound on" ELSE s$ = "Sound off"
-        CtlSetText msg, s$
-CASE AppGet(w, HelloRed) TO AppGet(w, HelloBlue)
-        CtlSetText msg, "Colour: " + CtlGetText$(ctl)
 END SELECT
 END SUB
 
@@ -1171,6 +1119,29 @@ Pal 7, 0, 0, 42
 END SUB
 '@@INIT-END
 
+'A push button in a rectangle, up or down. Retained buttons (CtlDraw) and
+'immediate ones (UiButton) both come here.
+SUB DrawPush (x1, y1, x2, y2, cap$, down)
+nudge = 0
+IF down THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
+gFill x1 + 2, y1 + 2, x2 - 2, y2 - 2, 3
+gLine x1 + 1, y1 + 1, x2 - 2, y1 + 1, hi
+gLine x1 + 1, y1 + 2, x1 + 1, y2 - 2, hi
+gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
+gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
+gBox x1, y1, x2, y2, 1
+w = x2 - x1 + 1
+h = y2 - y1 + 1
+CtlCap cap$, x1 + (w - LEN(cap$) * 8) \ 2 + nudge, y1 + (h - 16) \ 2 - 1 + nudge, w, 3
+END SUB
+
+'Control text in black on the background bg.
+SUB CtlCap (t$, x, y, w, bg)
+CoutBg = bg
+cout t$, x, y, 0, w, 0
+CoutBg = -1
+END SUB
+
 'A title bar button with its picture: 1 close, 2 maximise, 3 roll up.
 SUB WinBtn (x, y, kind)
 DrwBtn x, y, TtlHeight - 6, TtlHeight - 6
@@ -1279,9 +1250,7 @@ FOR i = p TO WNumber - 1
 NEXT
 WNumber = WNumber - 1
 MemFreeAll who
-FOR i = 1 TO TimerMax
-        IF TmWin(i) = who AND TmApp(i) > 0 THEN TmUsed(i) = 0
-NEXT
+TimersDrop who
 IF HSize(CtlFocus) = 0 THEN CtlFocus = 0
 IF HSize(CtlDown) = 0 THEN CtlDown = 0
 Repaint x1, y1, x2, y2
@@ -1470,6 +1439,12 @@ FOR i = 1 TO TimerMax
                         END IF
                 END IF
         END IF
+NEXT
+END SUB
+'Drop the timers of a window that closes.
+SUB TimersDrop (who)
+FOR i = 1 TO TimerMax
+        IF TmWin(i) = who AND TmApp(i) > 0 THEN TmUsed(i) = 0
 NEXT
 END SUB
 
@@ -2240,10 +2215,6 @@ IF Outside(x, y, x, y) THEN EXIT SUB
 PSET (x, y), c
 END SUB
 
-SUB gCircle (x, y, r, c)
-IF Outside(x - r, y - r, x + r, y + r) THEN EXIT SUB
-CIRCLE (x, y), r, c
-END SUB
 
 SUB gGetSprite (so)
 GET (0, 0)-(7, 15), SprData(so)
@@ -2318,26 +2289,6 @@ ty = y1 + (h - 16) \ 2 - 1
 SELECT CASE HGet(id, CfKind)
 CASE CtlLabel
         CtlCap cap$, x1, ty, w, 15
-CASE CtlButton
-        DrawPush x1, y1, x2, y2, cap$, (CtlDown = id)
-CASE CtlCheck
-        bx = y1 + (h - 13) \ 2
-        gBox x1, bx, x1 + 12, bx + 12, 1
-        gFill x1 + 1, bx + 1, x1 + 11, bx + 11, 15
-        IF HGet(id, CfChk) THEN
-                gLine x1 + 3, bx + 3, x1 + 9, bx + 9, 0
-                gLine x1 + 3, bx + 4, x1 + 8, bx + 9, 0
-                gLine x1 + 9, bx + 3, x1 + 3, bx + 9, 0
-                gLine x1 + 9, bx + 4, x1 + 4, bx + 9, 0
-        END IF
-        CtlCap cap$, x1 + 20, ty, w - 20, 15
-CASE CtlRadio
-        cx = x1 + 6
-        cy = y1 + h \ 2
-        gFill cx - 6, cy - 6, cx + 6, cy + 6, 15
-        gCircle cx, cy, 6, 1
-        IF HGet(id, CfChk) THEN gFill cx - 2, cy - 2, cx + 2, cy + 2, 0
-        CtlCap cap$, x1 + 20, ty, w - 20, 15
 CASE CtlText
         IF CtlFocus = id THEN bc = 7 ELSE bc = 1
         gBox x1, y1, x2, y2, bc
@@ -2351,29 +2302,6 @@ CASE CtlText
                 gLine cx, y1 + 3, cx, y2 - 3, 0
         END IF
 END SELECT
-END SUB
-
-'A push button in a rectangle, up or down. Retained buttons (CtlDraw) and
-'immediate ones (UiButton) both come here.
-SUB DrawPush (x1, y1, x2, y2, cap$, down)
-nudge = 0
-IF down THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
-gFill x1 + 2, y1 + 2, x2 - 2, y2 - 2, 3
-gLine x1 + 1, y1 + 1, x2 - 2, y1 + 1, hi
-gLine x1 + 1, y1 + 2, x1 + 1, y2 - 2, hi
-gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
-gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
-gBox x1, y1, x2, y2, 1
-w = x2 - x1 + 1
-h = y2 - y1 + 1
-CtlCap cap$, x1 + (w - LEN(cap$) * 8) \ 2 + nudge, y1 + (h - 16) \ 2 - 1 + nudge, w, 3
-END SUB
-
-'Control text in black on the background bg.
-SUB CtlCap (t$, x, y, w, bg)
-CoutBg = bg
-cout t$, x, y, 0, w, 0
-CoutBg = -1
 END SUB
 
 'Draw the controls of one window, in the order they were added. A control
@@ -2482,35 +2410,12 @@ IF old > 0 THEN CtlRedraw old
 IF id > 0 THEN CtlRedraw id
 END SUB
 
-'Select one radio button of its group.
-'@api Controls | Select a radio button and clear the others of its group.
 SUB CtlSelect (id)
-FOR i = 1 TO HeapMax
-        IF i <> id AND HKind(i) = KCtl AND HGet(i, CfKind) = CtlRadio AND HOwner(i) = HOwner(id) AND HGet(i, CfGrp) = HGet(id, CfGrp) THEN
-                IF HGet(i, CfChk) <> 0 THEN
-                        HSet i, CfChk, 0
-                        CtlRedraw i
-                END IF
-        END IF
-NEXT
-IF HGet(id, CfChk) = 0 THEN
-        HSet id, CfChk, 1
-        CtlRedraw id
-END IF
 END SUB
 
 'What a click on a control does, after the button went up on it.
 SUB CtlActivate (id)
 SELECT CASE HGet(id, CfKind)
-CASE CtlButton
-        CtlEvent = id
-CASE CtlCheck
-        IF HGet(id, CfChk) THEN HSet id, CfChk, 0 ELSE HSet id, CfChk, 1
-        CtlRedraw id
-        CtlEvent = id
-CASE CtlRadio
-        CtlSelect id
-        CtlEvent = id
 CASE CtlText
         CtlSetFocus id
 END SELECT
@@ -2519,29 +2424,8 @@ END SUB
 'Follow the mouse until the button goes up. A button looks pressed while the
 'pointer is on it; the click counts when the button goes up on it.
 SUB CtlTrack (id)
-IF HGet(id, CfKind) = CtlButton THEN
-        CtlDown = id
-        CtlRedraw id
-        isin = -1
-        CtlRect id, x1, y1, x2, y2
-        DO
-                mouse.getpos mx, my
-                over = (mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2)
-                IF over <> isin THEN
-                        isin = over
-                        IF isin THEN CtlDown = id ELSE CtlDown = 0
-                        CtlRedraw id
-                END IF
-        LOOP WHILE mouse.getbutton = LB
-        mouse.getpos mx, my
-        isin = (mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2)
-        CtlDown = 0
-        CtlRedraw id
-        IF isin THEN CtlActivate id
-ELSE
         DO: LOOP WHILE mouse.getbutton = LB
         CtlActivate id
-END IF
 END SUB
 
 'A key for the focused text box. Printable keys are added (40 characters at
@@ -2581,15 +2465,3 @@ FUNCTION CtlGetText$ (id)
 CtlGetText$ = HText(id)
 END FUNCTION
 
-'Check or uncheck a checkbox or radio button. Use CtlSelect for a radio button
-'that must exclude the others of its group.
-'@api Controls | Check or uncheck a check box or radio button.
-SUB CtlSetChecked (id, v)
-IF v <> 0 THEN HSet id, CfChk, 1 ELSE HSet id, CfChk, 0
-CtlRedraw id
-END SUB
-
-'@api Controls | -1 when a check box or radio button is checked.
-FUNCTION CtlGetChecked (id)
-IF HGet(id, CfChk) <> 0 THEN CtlGetChecked = -1 ELSE CtlGetChecked = 0
-END FUNCTION

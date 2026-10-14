@@ -1,4 +1,4 @@
-'@app id=4 name=Notepad start=NotepadStart paint=NotepadPaint key=NotepadKey
+'@app id=4 name=Notepad start=NotepadStart paint=NotepadPaint key=NotepadKey uses=immediate,blocks
 'Notepad: ten lines of up to 40 characters, a line editor. Typing adds to the
 'current line, Backspace takes the last character off, Enter and the arrow keys
 'move between lines. Save writes NOTE.TXT and Load reads it. The lines are

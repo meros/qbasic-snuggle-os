@@ -25,10 +25,10 @@ Snuggle OS (Chat app, QBasic)     COM1 ──serial──▶ DOSBox "nullmodem" 
 ## Run it
 
 ```
-cd chat && cargo build --release
-target/release/snuggle-chat-server --listen 127.0.0.1:7000
-target/release/snuggle-chat-relay --serial 127.0.0.1:7001 --server 127.0.0.1:7000
-nix run .            # the launcher's DOSBox listens on 7001
+nix run .#chat-server                  # listens on 127.0.0.1:7000
+nix run .#chat-relay                   # dials DOSBox on 7001, the server on 7000
+nix run .                              # the launcher's DOSBox listens on 7001
+# without nix: cd chat && cargo build --release, then the same two binaries
 ```
 
 Start the Chat app from the dock. The relay can be started before DOSBox, after

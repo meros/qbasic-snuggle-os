@@ -1,4 +1,4 @@
-'@app id=2 name=Clock start=ClockStart timer=ClockTimer
+'@app id=2 name=Clock start=ClockStart timer=ClockTimer uses=controls,timers
 'Clock: the date and the time of the system clock, once a second. The timer
 'callback sets the next one for the start of the next second, so the display
 'does not drift. Data words: the two label numbers.

@@ -1,4 +1,6 @@
-'@app id=1 name=Hello boot start=HelloStart event=HelloEvent timer=HelloTimer
+'@app id=1 name=Hello boot start=HelloStart event=HelloEvent timer=HelloTimer uses=controls,widgets,timers
+'A test fixture, not part of the program: it uses every retained control and the
+'event and timer callbacks, so the tests keep exercising them.
 'Hello: a window with a name box, a check box, three radio buttons and two
 'buttons. OK greets the name, and the greeting goes back to Ready after 5 s.
 'Clear empties the name. Data words: the control numbers.

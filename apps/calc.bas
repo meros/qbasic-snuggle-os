@@ -1,4 +1,4 @@
-'@app id=3 name=Calc start=CalcStart paint=CalcPaint
+'@app id=3 name=Calc start=CalcStart paint=CalcPaint uses=controls,immediate
 'Calculator: digits, a decimal point, + - * / and =. An operator key finishes
 'the pending operation, so 5 + 3 + shows 8. The keys are immediate mode buttons
 '(CalcPaint), so they take no heap. Data words: the accumulator (a double kept

@@ -39,6 +39,8 @@ stdenvNoCC.mkDerivation {
     aspect=true
     [cpu]
     cycles=max
+    [serial]
+    serial1=nullmodem port:7001 transparent:1
     [autoexec]
     mount c $work
     c:

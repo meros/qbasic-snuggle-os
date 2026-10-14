@@ -16,6 +16,7 @@ An app is one file in `apps/` that starts with a manifest line:
 | `id` | app number, unique; the builder adds `CONST AppId<Name>` |
 | `name` | label of the desktop icon |
 | `boot` | start one instance when the desktop starts |
+| `uses` | the parts of the kernel the app needs: `timers`, `immediate`, `dirty`, `blocks`, `controls`, `widgets`, `dock`, `notice` (what they require comes with them) |
 | `opaque` | the paint procedure paints all of the client area, so the kernel skips the white fill under it |
 | `start`, `event`, `paint`, `key`, `timer` | the name of a callback procedure (below) |
 

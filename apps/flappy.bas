@@ -1,4 +1,4 @@
-'@app id=5 name=Flappy start=FlappyStart paint=FlappyPaint key=FlappyKey timer=FlappyTimer opaque
+'@app id=5 name=Flappy start=FlappyStart paint=FlappyPaint key=FlappyKey timer=FlappyTimer opaque uses=immediate,dirty,timers
 'Flappy: press Space (or the Flap button) to flap, fly through the gaps. A tick
 'every 1/18 s moves the pipes 3 pixels left and pulls the bird down. The window
 'is painted from its state (FlappyPaint, immediate mode, opaque), and a tick marks

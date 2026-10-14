@@ -77,15 +77,14 @@ is repainted through the clip: 1.2 writes per pixel.
 `SNUGGLE.BAS` is built from the kernel (`src/kernel.bas`) and one file per app
 (`apps/*.bas`) by `python3 scripts/build.py`. The built file is committed
 because QBasic, the Docker image and `nix run` all want one file; the tests fail
-when it is out of date. The desktop starts one Hello instance at boot and shows
-a dock along the bottom of the screen with an icon for each app: it is on top of
-the windows, the icons near the pointer grow, and a click on an icon starts
-another instance (`AppLaunch`).
+when it is out of date. The desktop shows a dock along the bottom of the screen
+with an icon for each app: it is on top of the windows, the icons near the
+pointer grow, and a click on an icon starts an instance (`AppLaunch`).
 
 An app module starts with a manifest line and holds its own procedures:
 
 ```
-'@app id=2 name=Clock start=ClockStart timer=ClockTimer
+'@app id=2 name=Clock start=ClockStart timer=ClockTimer uses=controls,timers
 ```
 
 | Field | Meaning |
@@ -93,20 +92,39 @@ An app module starts with a manifest line and holds its own procedures:
 | `id` | app number, unique; the builder adds `CONST AppId<Name>` |
 | `name` | label of the dock icon |
 | `boot` | start one instance when the desktop starts |
+| `uses` | the parts of the kernel the app needs (below) |
 | `start` | `SUB` that makes an instance with `AppWindow` |
 | `event` | `SUB (win, ctl)` called for a control event of its windows |
 | `timer` | `SUB (win, tag)` called when its `TimerSet` runs out |
 | `paint` | `SUB (win)` that declares immediate mode controls (below) |
+| `key` | `SUB (win, k$)` called for a key while the app's window is in front |
+| `opaque` | the app paints all of its client area |
+
+**Parts of the kernel.** Windows, the heap, repainting and the mouse are always
+there. The rest are parts that an app asks for with `uses=`, and the builder
+leaves out the ones nobody uses (their stubs stay, so the core still compiles):
+
+| Part | What | Needs |
+| --- | --- | --- |
+| `controls` | retained labels and text boxes (`CtlAdd`, `CtlSetText`) | |
+| `widgets` | retained buttons, check boxes, radio buttons | `controls` |
+| `immediate` | `UiButton`, `UiLabel`, `UiFill`: controls an app declares | |
+| `timers` | `TimerSet` and the clock the main loop runs | |
+| `dirty` | `WinDirty`, `WinFlush`: repaint only what changed | |
+| `blocks` | `AppBlock`, `BlockText$`: strings in the heap | |
+| `dock` | the dock (on by default) | |
+| `notice` | the line at the top of the screen (on by default) | `timers` is not needed, but the line does not leave without it |
 
 The procedures an app can call and the callbacks it can have are in
 `docs/API.md`, generated from the `'@api` lines of the kernel. To add an app,
-write `apps/<name>.bas`, run the builder, and build. The apps
-are Hello (`apps/hello.bas`), Clock (`apps/clock.bas`, the system date and
-time, once a second), Calc (`apps/calc.bas`, + - * / on doubles, its state in
-the window's data block) Notepad (`apps/notepad.bas`, ten lines, Save and
-Load, keys through `key=`) Chat (`apps/chat.bas`, names, rooms and direct messages over the serial port, `docs/CHAT.md`) and Flappy (`apps/flappy.bas`, a Flappy Bird game:
-Space or the Flap button, a timer tick every 1/18 s, drawn with `UiFill`, and only what changed is repainted: `WinDirty` and `WinFlush`, with the
-manifest flag `opaque` so no white fill goes under it).
+write `apps/<name>.bas`, run the builder, and build. The apps are Clock
+(`apps/clock.bas`, the system date and time, once a second), Calc
+(`apps/calc.bas`, + - * / on doubles), Notepad (`apps/notepad.bas`, ten lines,
+Save and Load, keys through `key=`), Chat (`apps/chat.bas`, names, rooms and
+direct messages over the serial port, `docs/CHAT.md`) and Flappy
+(`apps/flappy.bas`, a game: only what changed is repainted, with `WinDirty` and
+the `opaque` flag). `tests/fixtures/hello.bas` is a test app that uses the
+retained controls and the event and timer callbacks, so they stay tested.
 
 | Procedure | What |
 | --- | --- |
@@ -189,7 +207,7 @@ The cases run as three programs (window, controls, heap, apps, input, speed), an
 leaves out the mouse library, the hit tests, the drag loops and the palette
 setup, to keep the test build inside QBasic's memory (code and arrays share
 about 160 KB). `scripts/test.sh` prints the memory left after the first paint,
-about 41 KB, and fails below 25 KB. A program stops starting at about 20 KB.
+about 37 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 ## Layout
 
