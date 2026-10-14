@@ -110,6 +110,18 @@ KILL "NOTE.TXT"
 NotepadButton np, 2
 Check "input: Load without a file says so", BlockText$(AppGet(np, NpMsg)) = "No NOTE.TXT", BlockText$(AppGet(np, NpMsg))
 
+'The dock enlarged under the pointer, over the windows (a picture of the desktop).
+ClickIcon AppIdCalc
+WinMoveTo WOrder(1), 330, 200
+MsClear
+MsAdd DockCx(2) + 6, 455, 0
+MainStep
+Check "input: the pointer over the dock enlarges the icon under it", DockSize(2) > DockBase + 20, STR$(DockSize(2))
+CompareToLegacy "look: the desktop with windows and the dock enlarged"
+MsClear
+MsAdd 600, 100, 0
+MainStep
+
 'The close button frees what the window owned; Q quits when no app takes keys.
 used = HeapTop
 TitleButton np, 1
