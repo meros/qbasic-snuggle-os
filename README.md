@@ -103,7 +103,8 @@ are Hello (`apps/hello.bas`), Clock (`apps/clock.bas`, the system date and
 time, once a second), Calc (`apps/calc.bas`, + - * / on doubles, its state in
 the window's data block) Notepad (`apps/notepad.bas`, ten lines, Save and
 Load, keys through `key=`) and Flappy (`apps/flappy.bas`, a Flappy Bird game:
-Space or the Flap button, a timer tick every 1/18 s, drawn with `UiFill`).
+Space or the Flap button, a timer tick every 1/18 s, drawn with `UiFill`, and only what changed is repainted: `WinDirty` and `WinFlush`, with the
+manifest flag `opaque` so no white fill goes under it).
 
 | Procedure | What |
 | --- | --- |
@@ -182,11 +183,11 @@ compares the dumps pixel by pixel on the host. A failing case writes
 idle machine. DOSBox sometimes crashes at start under Xvfb; the script runs the
 test again when that happens.
 
-The cases run as three programs (window, controls, heap, input, speed), and the test build
+The cases run as three programs (window, controls, heap, apps, input, speed), and the test build
 leaves out the mouse library, the hit tests, the drag loops and the palette
 setup, to keep the test build inside QBasic's memory (code and arrays share
 about 160 KB). `scripts/test.sh` prints the memory left after the first paint,
-about 48 KB, and fails below 25 KB. A program stops starting at about 20 KB.
+about 45 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 ## Layout
 

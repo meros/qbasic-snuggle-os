@@ -1,7 +1,8 @@
-'@app id=5 name=Flappy start=FlappyStart paint=FlappyPaint key=FlappyKey timer=FlappyTimer
+'@app id=5 name=Flappy start=FlappyStart paint=FlappyPaint key=FlappyKey timer=FlappyTimer opaque
 'Flappy: press Space (or the Flap button) to flap, fly through the gaps. A tick
 'every 1/18 s moves the pipes 3 pixels left and pulls the bird down. The window
-'is redrawn from its state each tick (FlappyPaint, immediate mode).
+'is painted from its state (FlappyPaint, immediate mode, opaque), and a tick marks
+'only what changed: the bird, and the 3 pixel strips where a pipe left and came.
 'Data words: bird height and speed (quarter pixels), three pipes (x, then gap
 'top), the score, the state (0 ready, 1 flying, 2 crashed) and the best score.
 CONST FlY = 0, FlVy = 1, FlPx = 2, FlGap = 5, FlScore = 8, FlState = 9, FlBest = 10, FlWords = 11
@@ -26,14 +27,15 @@ AppSet w, FlState, 0
 END SUB
 
 SUB FlappyPaint (w)
-UiFill 0, 0, FlW, FlH, 11
+UiFill 0, 0, UiW, FlH, 11
+UiFill 0, FlH, UiW, UiH - FlH, 15
 FOR i = 0 TO 2
         px = AppGet(w, FlPx + i)
         gy = AppGet(w, FlGap + i)
         UiFill px, 0, FlPipeW, gy, 10
         UiFill px, gy + FlGapH, FlPipeW, FlH - FlGround - gy - FlGapH, 10
 NEXT
-UiFill 0, FlH - FlGround, FlW, FlGround, 8
+UiFill 0, FlH - FlGround, UiW, FlGround, 8
 by = AppGet(w, FlY) \ 4
 UiFill FlBirdX, by, 16, 12, 14
 UiFill FlBirdX + 10, by + 2, 3, 3, 0
@@ -68,6 +70,8 @@ END SUB
 'One tick of the game.
 SUB FlappyTimer (w, tag)
 IF AppGet(w, FlState) <> 1 THEN EXIT SUB
+oldy = AppGet(w, FlY) \ 4
+oldscore = AppGet(w, FlScore)
 vy = AppGet(w, FlVy) + 1
 y = AppGet(w, FlY) + vy
 AppSet w, FlVy, vy
@@ -78,14 +82,23 @@ mx = 0
 FOR i = 0 TO 2
         IF AppGet(w, FlPx + i) > mx THEN mx = AppGet(w, FlPx + i)
 NEXT
+'the bird: where it was and where it is now
+IF oldy < by THEN top = oldy ELSE top = by
+WinDirty w, FlBirdX, top, 20, ABS(by - oldy) + 13
 FOR i = 0 TO 2
-        px = AppGet(w, FlPx + i) - 3
+        old = AppGet(w, FlPx + i)
+        px = old - 3
         gy = AppGet(w, FlGap + i)
         IF px < -FlPipeW THEN
                 px = mx + FlSpace
                 gy = 30 + INT(RND * (FlH - FlGround - FlGapH - 60))
                 AppSet w, FlGap + i, gy
                 mx = px
+                WinDirty w, old, 0, FlPipeW, FlH
+                WinDirty w, px, 0, FlPipeW, FlH
+        ELSE
+                WinDirty w, old + FlPipeW - 3, 0, 3, FlH
+                WinDirty w, px, 0, 3, FlH
         END IF
         AppSet w, FlPx + i, px
         IF px + FlPipeW < FlBirdX AND px + FlPipeW + 3 >= FlBirdX THEN AppSet w, FlScore, AppGet(w, FlScore) + 1
@@ -93,10 +106,12 @@ FOR i = 0 TO 2
                 IF by < gy OR by + 12 > gy + FlGapH THEN dead = -1
         END IF
 NEXT
+IF AppGet(w, FlScore) <> oldscore THEN WinDirty w, 0, FlH, FlW, 40
 IF dead THEN
         AppSet w, FlState, 2
         IF AppGet(w, FlScore) > AppGet(w, FlBest) THEN AppSet w, FlBest, AppGet(w, FlScore)
+        WinDirty w, 0, 0, FlW + 1, FlH + 40
 END IF
-WinInvalidate w
+WinFlush
 IF NOT dead THEN TimerSet AppIdFlappy, w, 1, .05
 END SUB

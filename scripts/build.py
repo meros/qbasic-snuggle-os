@@ -18,6 +18,9 @@ An app module is one .bas file whose first line is its manifest:
   paint  SUB (win) called each time a window of the app is painted and, in
          another mode, to find a click: it declares immediate mode controls
          with UiButton and UiLabel, which cost no heap (see the README)
+  opaque the app paints all of its client area (in its paint= procedure), so
+         the kernel leaves out the white fill under it: a repaint writes each
+         of its pixels once
   key    SUB (win, k$) called for a key when a window of the app is in front
          (the app then gets every key, including Q and R); an arrow key is
          CHR$(0) followed by a letter
@@ -44,7 +47,7 @@ def apps():
         m = re.match(r"'@app\s+(.*)$", first)
         if not m:
             sys.exit("build: %s has no '@app manifest on its first line" % path.name)
-        fields = {"boot": False}
+        fields = {"boot": False, "opaque": False}
         for word in m.group(1).split():
             k, _, v = word.partition("=")
             fields[k] = v if v else True
@@ -102,6 +105,17 @@ def generated(found):
             out.append("        %s win, tag" % a["timer"])
     out.append("END SELECT")
     out.append("END SUB")
+    out.append("")
+    out.append("'-1 when the app paints all of its client area (manifest opaque).")
+    out.append("FUNCTION AppOpaque (app)")
+    out.append("AppOpaque = 0")
+    out.append("SELECT CASE app")
+    for a in found:
+        if a["opaque"]:
+            out.append("CASE AppId%s" % a["name"])
+            out.append("        AppOpaque = -1")
+    out.append("END SELECT")
+    out.append("END FUNCTION")
     out.append("")
     out.append("'-1 when the app takes the keys of its front window.")
     out.append("FUNCTION AppWantsKeys (app)")
@@ -177,6 +191,7 @@ def api_doc():
            "| `id` | app number, unique; the builder adds `CONST AppId<Name>` |",
            "| `name` | label of the desktop icon |",
            "| `boot` | start one instance when the desktop starts |",
+           "| `opaque` | the paint procedure paints all of the client area, so the kernel skips the white fill under it |",
            "| `start`, `event`, `paint`, `key`, `timer` | the name of a callback procedure (below) |",
            "", "## Callbacks", "", "| Manifest field | Signature | When |", "| --- | --- | --- |"]
     for key, sig, text in CALLBACKS:

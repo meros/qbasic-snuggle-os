@@ -57,6 +57,12 @@ DIM SHARED UiHx2 AS INTEGER
 DIM SHARED UiHy2 AS INTEGER
 DIM SHARED UiDown AS INTEGER            'mode 0: the button that looks pressed, 0 for none
 DIM SHARED UiClickId AS INTEGER         'mode 2: the button that was clicked
+DIM SHARED ClientOpaque AS INTEGER      'WinDrwBrd leaves the client area alone: the app paints all of it
+DIM SHARED DirtyN AS INTEGER            'rectangles an app marked for repaint (WinDirty), screen coordinates
+DIM SHARED DirtyX1(8) AS INTEGER
+DIM SHARED DirtyY1(8) AS INTEGER
+DIM SHARED DirtyX2(8) AS INTEGER
+DIM SHARED DirtyY2(8) AS INTEGER
 DIM SHARED QuitFlag AS INTEGER           '-1 when the user asked to leave
 DIM SHARED OomFlag AS INTEGER           '-1 when a block could not be had, set by MemAlloc
 DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
@@ -264,6 +270,42 @@ WinRect who, x1, y1, x2, y2
 Repaint x1, y1 + TtlHeight + 1, x2, y2
 END SUB
 
+'Mark a rectangle of the client area (x, y, w, h relative to it) as changed. WinFlush
+'repaints everything marked, with one wait for the retrace. Only the marked
+'rectangles are repainted, through the clip, so a game that moves little redraws
+'little. More than eight marks in a row repaint what there is first.
+'@api Windows | Mark a rectangle of the client area as changed (cut to the client area); `WinFlush` repaints the marks.
+SUB WinDirty (who, x, y, w, h)
+WinGeom who, wx, wy, ww, wh, state
+x1 = wx + 3 + x
+y1 = wy + TtlHeight + 4 + y
+x2 = x1 + w - 1
+y2 = y1 + h - 1
+IF x1 < wx + 3 THEN x1 = wx + 3
+IF y1 < wy + TtlHeight + 4 THEN y1 = wy + TtlHeight + 4
+IF x2 > wx + ww - 3 THEN x2 = wx + ww - 3
+IF y2 > wy + wh - 3 THEN y2 = wy + wh - 3
+IF x1 > x2 OR y1 > y2 OR state = 0 THEN EXIT SUB
+IF DirtyN >= 8 THEN WinFlush
+DirtyN = DirtyN + 1
+DirtyX1(DirtyN) = x1
+DirtyY1(DirtyN) = y1
+DirtyX2(DirtyN) = x2
+DirtyY2(DirtyN) = y2
+END SUB
+
+'@api Windows | Repaint the rectangles marked with `WinDirty`.
+SUB WinFlush
+IF DirtyN = 0 THEN EXIT SUB
+mouse.hide
+WaitRetrace
+FOR i = 1 TO DirtyN
+        RepaintRect DirtyX1(i), DirtyY1(i), DirtyX2(i), DirtyY2(i)
+NEXT
+DirtyN = 0
+mouse.show
+END SUB
+
 'Start an instance of an app and show its window.
 SUB AppLaunch (app)
 WNew = 0
@@ -329,6 +371,15 @@ CASE AppIdFlappy
         FlappyTimer win, tag
 END SELECT
 END SUB
+
+'-1 when the app paints all of its client area (manifest opaque).
+FUNCTION AppOpaque (app)
+AppOpaque = 0
+SELECT CASE app
+CASE AppIdFlappy
+        AppOpaque = -1
+END SELECT
+END FUNCTION
 
 '-1 when the app takes the keys of its front window.
 FUNCTION AppWantsKeys (app)
@@ -615,7 +666,8 @@ END SUB
 '---- app 5: Flappy (apps/flappy.bas)
 'Flappy: press Space (or the Flap button) to flap, fly through the gaps. A tick
 'every 1/18 s moves the pipes 3 pixels left and pulls the bird down. The window
-'is redrawn from its state each tick (FlappyPaint, immediate mode).
+'is painted from its state (FlappyPaint, immediate mode, opaque), and a tick marks
+'only what changed: the bird, and the 3 pixel strips where a pipe left and came.
 'Data words: bird height and speed (quarter pixels), three pipes (x, then gap
 'top), the score, the state (0 ready, 1 flying, 2 crashed) and the best score.
 CONST FlY = 0, FlVy = 1, FlPx = 2, FlGap = 5, FlScore = 8, FlState = 9, FlBest = 10, FlWords = 11
@@ -640,14 +692,15 @@ AppSet w, FlState, 0
 END SUB
 
 SUB FlappyPaint (w)
-UiFill 0, 0, FlW, FlH, 11
+UiFill 0, 0, UiW, FlH, 11
+UiFill 0, FlH, UiW, UiH - FlH, 15
 FOR i = 0 TO 2
         px = AppGet(w, FlPx + i)
         gy = AppGet(w, FlGap + i)
         UiFill px, 0, FlPipeW, gy, 10
         UiFill px, gy + FlGapH, FlPipeW, FlH - FlGround - gy - FlGapH, 10
 NEXT
-UiFill 0, FlH - FlGround, FlW, FlGround, 8
+UiFill 0, FlH - FlGround, UiW, FlGround, 8
 by = AppGet(w, FlY) \ 4
 UiFill FlBirdX, by, 16, 12, 14
 UiFill FlBirdX + 10, by + 2, 3, 3, 0
@@ -682,6 +735,8 @@ END SUB
 'One tick of the game.
 SUB FlappyTimer (w, tag)
 IF AppGet(w, FlState) <> 1 THEN EXIT SUB
+oldy = AppGet(w, FlY) \ 4
+oldscore = AppGet(w, FlScore)
 vy = AppGet(w, FlVy) + 1
 y = AppGet(w, FlY) + vy
 AppSet w, FlVy, vy
@@ -692,14 +747,23 @@ mx = 0
 FOR i = 0 TO 2
         IF AppGet(w, FlPx + i) > mx THEN mx = AppGet(w, FlPx + i)
 NEXT
+'the bird: where it was and where it is now
+IF oldy < by THEN top = oldy ELSE top = by
+WinDirty w, FlBirdX, top, 20, ABS(by - oldy) + 13
 FOR i = 0 TO 2
-        px = AppGet(w, FlPx + i) - 3
+        old = AppGet(w, FlPx + i)
+        px = old - 3
         gy = AppGet(w, FlGap + i)
         IF px < -FlPipeW THEN
                 px = mx + FlSpace
                 gy = 30 + INT(RND * (FlH - FlGround - FlGapH - 60))
                 AppSet w, FlGap + i, gy
                 mx = px
+                WinDirty w, old, 0, FlPipeW, FlH
+                WinDirty w, px, 0, FlPipeW, FlH
+        ELSE
+                WinDirty w, old + FlPipeW - 3, 0, 3, FlH
+                WinDirty w, px, 0, 3, FlH
         END IF
         AppSet w, FlPx + i, px
         IF px + FlPipeW < FlBirdX AND px + FlPipeW + 3 >= FlBirdX THEN AppSet w, FlScore, AppGet(w, FlScore) + 1
@@ -707,11 +771,13 @@ FOR i = 0 TO 2
                 IF by < gy OR by + 12 > gy + FlGapH THEN dead = -1
         END IF
 NEXT
+IF AppGet(w, FlScore) <> oldscore THEN WinDirty w, 0, FlH, FlW, 40
 IF dead THEN
         AppSet w, FlState, 2
         IF AppGet(w, FlScore) > AppGet(w, FlBest) THEN AppSet w, FlBest, AppGet(w, FlScore)
+        WinDirty w, 0, 0, FlW + 1, FlH + 40
 END IF
-WinInvalidate w
+WinFlush
 IF NOT dead THEN TimerSet AppIdFlappy, w, 1, .05
 END SUB
 '@@APP-END
@@ -1032,6 +1098,17 @@ CASE 1
 CASE 2
         IF id = UiClickId THEN UiButton = -1
 END SELECT
+END FUNCTION
+
+'The size of the client area in pixels, for an app that paints all of it.
+'@api Immediate mode | Width of the client area, in a paint procedure.
+FUNCTION UiW
+UiW = UiRight - UiOx + 1
+END FUNCTION
+
+'@api Immediate mode | Height of the client area, in a paint procedure.
+FUNCTION UiH
+UiH = UiBottom - UiOy + 1
 END FUNCTION
 
 'A filled rectangle in a colour, x and y relative to the client area. It is
@@ -1369,13 +1446,17 @@ gPset x1 + 2, y2 - 2, 2
 gLine x2 - 2, y1 + 3, x2 - 2, y2 - 2, 3
 gLine x1 + 3, y2 - 2, x2 - 3, y2 - 2, 3
 'Client area
-IF x1 + 3 <= x2 - 3 AND y1 + 3 <= y2 - 3 THEN gFill x1 + 3, y1 + 3, x2 - 3, y2 - 3, 15
+IF x1 + 3 <= x2 - 3 AND y1 + 3 <= y2 - 3 AND NOT ClientOpaque THEN gFill x1 + 3, y1 + 3, x2 - 3, y2 - 3, 15
 
 END SUB
 
 SUB WinDrwMng (who)
 GetStats who, text$, x, y, w, h, state
+'An app that paints all of its client area (manifest opaque) needs no white
+'fill under it, so a repaint writes each of its pixels once.
+ClientOpaque = AppOpaque(HGet(who, WfApp))
 WinDrw text$, x, y, w, h, state
+ClientOpaque = 0
 IF state <> 0 THEN
         CtlDrawAll who
         UiRun who, 0

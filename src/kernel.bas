@@ -55,6 +55,12 @@ DIM SHARED UiHx2 AS INTEGER
 DIM SHARED UiHy2 AS INTEGER
 DIM SHARED UiDown AS INTEGER            'mode 0: the button that looks pressed, 0 for none
 DIM SHARED UiClickId AS INTEGER         'mode 2: the button that was clicked
+DIM SHARED ClientOpaque AS INTEGER      'WinDrwBrd leaves the client area alone: the app paints all of it
+DIM SHARED DirtyN AS INTEGER            'rectangles an app marked for repaint (WinDirty), screen coordinates
+DIM SHARED DirtyX1(8) AS INTEGER
+DIM SHARED DirtyY1(8) AS INTEGER
+DIM SHARED DirtyX2(8) AS INTEGER
+DIM SHARED DirtyY2(8) AS INTEGER
 DIM SHARED QuitFlag AS INTEGER           '-1 when the user asked to leave
 DIM SHARED OomFlag AS INTEGER           '-1 when a block could not be had, set by MemAlloc
 DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
@@ -260,6 +266,42 @@ END SUB
 SUB WinInvalidate (who)
 WinRect who, x1, y1, x2, y2
 Repaint x1, y1 + TtlHeight + 1, x2, y2
+END SUB
+
+'Mark a rectangle of the client area (x, y, w, h relative to it) as changed. WinFlush
+'repaints everything marked, with one wait for the retrace. Only the marked
+'rectangles are repainted, through the clip, so a game that moves little redraws
+'little. More than eight marks in a row repaint what there is first.
+'@api Windows | Mark a rectangle of the client area as changed (cut to the client area); `WinFlush` repaints the marks.
+SUB WinDirty (who, x, y, w, h)
+WinGeom who, wx, wy, ww, wh, state
+x1 = wx + 3 + x
+y1 = wy + TtlHeight + 4 + y
+x2 = x1 + w - 1
+y2 = y1 + h - 1
+IF x1 < wx + 3 THEN x1 = wx + 3
+IF y1 < wy + TtlHeight + 4 THEN y1 = wy + TtlHeight + 4
+IF x2 > wx + ww - 3 THEN x2 = wx + ww - 3
+IF y2 > wy + wh - 3 THEN y2 = wy + wh - 3
+IF x1 > x2 OR y1 > y2 OR state = 0 THEN EXIT SUB
+IF DirtyN >= 8 THEN WinFlush
+DirtyN = DirtyN + 1
+DirtyX1(DirtyN) = x1
+DirtyY1(DirtyN) = y1
+DirtyX2(DirtyN) = x2
+DirtyY2(DirtyN) = y2
+END SUB
+
+'@api Windows | Repaint the rectangles marked with `WinDirty`.
+SUB WinFlush
+IF DirtyN = 0 THEN EXIT SUB
+mouse.hide
+WaitRetrace
+FOR i = 1 TO DirtyN
+        RepaintRect DirtyX1(i), DirtyY1(i), DirtyX2(i), DirtyY2(i)
+NEXT
+DirtyN = 0
+mouse.show
 END SUB
 
 'Start an instance of an app and show its window.
@@ -598,6 +640,17 @@ CASE 2
 END SELECT
 END FUNCTION
 
+'The size of the client area in pixels, for an app that paints all of it.
+'@api Immediate mode | Width of the client area, in a paint procedure.
+FUNCTION UiW
+UiW = UiRight - UiOx + 1
+END FUNCTION
+
+'@api Immediate mode | Height of the client area, in a paint procedure.
+FUNCTION UiH
+UiH = UiBottom - UiOy + 1
+END FUNCTION
+
 'A filled rectangle in a colour, x and y relative to the client area. It is
 'cut to the client area, so a game can let things slide in and out (drawing only).
 '@api Immediate mode | A filled rectangle in colour `c`, relative to the client area and cut to it.
@@ -933,13 +986,17 @@ gPset x1 + 2, y2 - 2, 2
 gLine x2 - 2, y1 + 3, x2 - 2, y2 - 2, 3
 gLine x1 + 3, y2 - 2, x2 - 3, y2 - 2, 3
 'Client area
-IF x1 + 3 <= x2 - 3 AND y1 + 3 <= y2 - 3 THEN gFill x1 + 3, y1 + 3, x2 - 3, y2 - 3, 15
+IF x1 + 3 <= x2 - 3 AND y1 + 3 <= y2 - 3 AND NOT ClientOpaque THEN gFill x1 + 3, y1 + 3, x2 - 3, y2 - 3, 15
 
 END SUB
 
 SUB WinDrwMng (who)
 GetStats who, text$, x, y, w, h, state
+'An app that paints all of its client area (manifest opaque) needs no white
+'fill under it, so a repaint writes each of its pixels once.
+ClientOpaque = AppOpaque(HGet(who, WfApp))
 WinDrw text$, x, y, w, h, state
+ClientOpaque = 0
 IF state <> 0 THEN
         CtlDrawAll who
         UiRun who, 0

@@ -1,6 +1,6 @@
 """Splice the test code into SNUGGLE.BAS and print the result (LF line endings).
 
---cases <window|controls|heap|input|speed> picks the cases (the test code, the reference code
+--cases <window|controls|heap|apps|input|speed> picks the cases (the test code, the reference code
 and the program share the 160 KB QBasic gives code and arrays, so the cases run
 as separate programs).
 With --smoke it prints SNUGGLE.BAS with a stop after the first paint instead; the

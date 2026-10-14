@@ -16,6 +16,7 @@ An app is one file in `apps/` that starts with a manifest line:
 | `id` | app number, unique; the builder adds `CONST AppId<Name>` |
 | `name` | label of the desktop icon |
 | `boot` | start one instance when the desktop starts |
+| `opaque` | the paint procedure paints all of the client area, so the kernel skips the white fill under it |
 | `start`, `event`, `paint`, `key`, `timer` | the name of a callback procedure (below) |
 
 ## Callbacks
@@ -44,6 +45,8 @@ shows a notice, so an app need not check each call.
 | `BlockText$ (h)` | The string of a block made with `AppBlock`. |
 | `BlockSetText (h, t$)` | Set the string of a block made with `AppBlock`. |
 | `WinInvalidate (who)` | Repaint the client area of a window after the app changed what it shows. |
+| `WinDirty (who, x, y, w, h)` | Mark a rectangle of the client area as changed (cut to the client area); `WinFlush` repaints the marks. |
+| `WinFlush` | Repaint the rectangles marked with `WinDirty`. |
 | `WinClose (win)` | Close a window: its controls, blocks and timers go, and the area is repainted. |
 | `Notice (msg$)` | Show a line of text on the bar at the bottom of the screen for 4 seconds. |
 | `WinPutTop (who)` | Bring a window to the front. |
@@ -57,6 +60,8 @@ shows a notice, so an app need not check each call.
 | Procedure | What |
 | --- | --- |
 | `UiButton (id, x, y, w, h, cap$)` | A push button (`id` 1 or more, x and y relative to the client area). Returns -1 when it was clicked (only in the click pass), so the app does its work in the IF. |
+| `UiW` | Width of the client area, in a paint procedure. |
+| `UiH` | Height of the client area, in a paint procedure. |
 | `UiFill (x, y, w, h, c)` | A filled rectangle in colour `c`, relative to the client area and cut to it. |
 | `UiLabel (x, y, w, h, t$)` | Text in black on the client area, `h` high. |
 
