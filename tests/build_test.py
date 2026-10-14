@@ -1,6 +1,6 @@
 """Splice the test code into SNUGGLE.BAS and print the result (LF line endings).
 
---cases <window|controls|heap|apps|input|speed> picks the cases (the test code, the reference code
+--cases <window|controls|heap|apps|input|speed|chat|chatloss> picks the cases (the test code, the reference code
 and the program share the 160 KB QBasic gives code and arrays, so the cases run
 as separate programs).
 With --smoke it prints SNUGGLE.BAS with a stop after the first paint instead; the
@@ -32,6 +32,7 @@ _spec.loader.exec_module(_build)
 GROUP_APPS = {
     "window": ["hello"], "controls": ["hello"], "heap": ["hello"], "speed": ["hello"],
     "apps": ["clock", "calc", "flappy"], "input": ["hello", "calc", "notepad"],
+    "chat": ["chat"], "chatloss": ["chat"],
 }
 _group = sys.argv[sys.argv.index("--cases") + 1] if "--cases" in sys.argv else None
 if _group in GROUP_APPS:

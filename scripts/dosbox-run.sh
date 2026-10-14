@@ -27,6 +27,8 @@ pcspeaker=false
 [midi]
 mpu401=none
 mididevice=none
+[serial]
+serial1=${DOSBOX_SERIAL1:-dummy}
 [autoexec]
 mount c $build
 c:

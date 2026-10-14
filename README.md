@@ -104,7 +104,7 @@ write `apps/<name>.bas`, run the builder, and build. The apps
 are Hello (`apps/hello.bas`), Clock (`apps/clock.bas`, the system date and
 time, once a second), Calc (`apps/calc.bas`, + - * / on doubles, its state in
 the window's data block) Notepad (`apps/notepad.bas`, ten lines, Save and
-Load, keys through `key=`) and Flappy (`apps/flappy.bas`, a Flappy Bird game:
+Load, keys through `key=`) Chat (`apps/chat.bas`, names, rooms and direct messages over the serial port, `docs/CHAT.md`) and Flappy (`apps/flappy.bas`, a Flappy Bird game:
 Space or the Flap button, a timer tick every 1/18 s, drawn with `UiFill`, and only what changed is repainted: `WinDirty` and `WinFlush`, with the
 manifest flag `opaque` so no white fill goes under it).
 
@@ -203,6 +203,8 @@ about 41 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 | `scripts/screenshot.sh` | Screenshot of the program, from a video memory dump |
 | `scripts/fetch-docs.sh` | Downloads QBasic reference pages into `docs/qbasic/` (not committed) |
 | `docs/API.md` | The app API, generated from the kernel |
+| `docs/CHAT.md` | Chat: the protocol, the Rust server and relay, the serial port |
+| `chat/` | The chat server and the host relay (Rust) |
 | `docs/APPS-AND-API.md` | How apps and an API could work |
 | `flake.nix`, `nix/` | `nix run` package and test app |
 

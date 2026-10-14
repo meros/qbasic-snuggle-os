@@ -1,0 +1,17 @@
+[package]
+name = "snuggle-chat"
+version = "0.1.0"
+edition = "2021"
+description = "A very small chat server and the host relay Snuggle OS talks to over its serial port"
+license = "0BSD"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "snuggle-chat-server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "snuggle-chat-relay"
+path = "src/bin/relay.rs"
