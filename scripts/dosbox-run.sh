@@ -34,6 +34,14 @@ QBASIC /RUN $bas
 exit
 CONF
 cd "$build"
+# Headless means the virtual X server and nothing else. DOSBox 0.74 in nixpkgs
+# runs on SDL 1.2 through sdl12-compat (SDL2), and SDL2 picks Wayland first when
+# WAYLAND_DISPLAY is set, whatever DISPLAY says: the test windows then opened on
+# the desktop. Take Wayland away from it and ask for X11. Its default (OpenGL)
+# renderer crashes on Xvfb, which has no GLX: ask for the software one.
+unset WAYLAND_DISPLAY
+export SDL_VIDEODRIVER=x11
+export SDL_RENDER_DRIVER=software
 # DOSBox 0.74 segfaults at start now and then under Xvfb, and the runner starts
 # it again. Do not let each crash become a core dump: systemd-coredump reads,
 # compresses and writes every one of them, which is what bogs the machine down.

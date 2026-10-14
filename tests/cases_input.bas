@@ -7,7 +7,7 @@ IconCount = 0
 AppStartAll
 RepaintRect 0, 0, 639, 479
 hello = WOrder(1)
-Check "input: the desktop starts one Hello window and three icons", WNumber = 1 AND HGet(hello, WfApp) = AppIdHello AND IconCount = 3, STR$(WNumber) + STR$(IconCount)
+Check "input: the desktop starts one Hello window and a dock of three icons", WNumber = 1 AND HGet(hello, WfApp) = AppIdHello AND IconCount = 3, STR$(WNumber) + STR$(IconCount)
 CompareToLegacy "input: the desktop at start"
 
 'An icon starts an instance; windows cascade.
@@ -19,7 +19,7 @@ ClickIcon AppIdCalc
 Check "input: a second click starts a second instance", WNumber = 3, STR$(WNumber)
 extra = WOrder(1)
 WinClose extra
-Click 700 - 100, 450
+Click 600, 300
 Check "input: a click on the empty desktop does nothing", WNumber = 2, STR$(WNumber)
 
 'A click on a window behind raises it.
@@ -123,10 +123,10 @@ WinReset
 IconCount = 0
 END SUB
 
-'The icon of an app on the desktop, clicked.
+'The dock icon of an app, clicked.
 SUB ClickIcon (app)
 FOR i = 1 TO IconCount
-        IF IconApp(i) = app THEN Click IconX(i) + 10, IconY(i) + 10
+        IF IconApp(i) = app THEN Click DockCx(i), 460
 NEXT
 END SUB
 
@@ -148,27 +148,6 @@ END SUB
 SUB NotepadButton (w, b)
 WinRect w, x1, y1, x2, y2
 Click x1 + 3 + 8 + (b - 1) * 68 + 5, y1 + TtlHeight + 4 + 192 + 5
-END SUB
-
-SUB MsClear
-MsN = 0
-MsI = 0
-END SUB
-
-SUB MsAdd (x, y, b)
-MsN = MsN + 1
-MsX(MsN) = x
-MsY(MsN) = y
-MsB(MsN) = b
-END SUB
-
-'A click: the button goes down and up at one place, then one main loop pass.
-SUB Click (x, y)
-MsClear
-MsAdd x, y, 1
-MsAdd x, y, 0
-MainStep
-MsClear
 END SUB
 
 'A drag: down at the first point, five moves to the second, up there.

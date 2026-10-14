@@ -98,9 +98,9 @@ DIM SHARED Scratch(4100) AS INTEGER     'GET and PUT buffer: BlitMove uses all o
 DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
 DIM SHARED MouseOK AS INTEGER
 DIM SHARED MouseVis AS INTEGER
-DIM SHARED IconApp(7) AS INTEGER        'desktop icons: the app they start, where they are, their name
-DIM SHARED IconX(7) AS INTEGER
-DIM SHARED IconY(7) AS INTEGER
+CONST DockBase = 32, DockExtra = 24, DockSlot = 48, DockBar = 52, DockReach = 72
+DIM SHARED DockHover AS INTEGER         'the dock: where the pointer is over it (a multiple of 4), -1 for none
+DIM SHARED IconApp(7) AS INTEGER        'dock icons: the app they start, their name
 DIM SHARED IconText(7) AS STRING
 DIM SHARED IconCount AS INTEGER
 
@@ -128,7 +128,16 @@ SUB MainStep
 IF mouse.getbutton = LB THEN
 mouse.getpos cmx, cmy
 hit = 0
+ic = DockAt(cmx, cmy)
+IF ic > 0 THEN
+        'the dock is on top: an icon starts an instance of its app
+        hit = -1
+        CtlSetFocus 0
+        DO: LOOP WHILE mouse.getbutton = LB
+        AppLaunch IconApp(ic)
+END IF
 FOR Cyc = 1 TO WNumber
+IF hit <> 0 THEN EXIT FOR
 CW = WOrder(Cyc)
 part = WinPart(CW, cmx, cmy)
 cid = 0
@@ -167,15 +176,9 @@ CASE 8
 END SELECT
 IF part <> 0 THEN hit = -1: EXIT FOR
 NEXT
-IF hit = 0 THEN
-        'the desktop: an icon starts an instance of its app
-        CtlSetFocus 0
-        ic = IconAt(cmx, cmy)
-        IF ic > 0 THEN
-                DO: LOOP WHILE mouse.getbutton = LB
-                AppLaunch IconApp(ic)
-        END IF
-END IF
+IF hit = 0 THEN CtlSetFocus 0
+ELSE
+DockMove
 END IF
 k$ = ReadKey$
 IF CtlFocus <> 0 THEN
@@ -1040,13 +1043,13 @@ IF HSize(CtlDown) = 0 THEN CtlDown = 0
 Repaint x1, y1, x2, y2
 END SUB
 
-'A line of text on a bar at the bottom of the screen. The next repaint of that
+'A line of text on a bar at the top of the screen. The next repaint of that
 'area removes it.
 '@api Windows | Show a line of text on the bar at the bottom of the screen for 4 seconds.
 SUB Notice (msg$)
 mouse.hide
-gFill 0, 464, 639, 479, 5
-cout msg$, 8, 463, 15, 624, 0
+gFill 0, 0, 639, 15, 5
+cout msg$, 8, -1, 15, 624, 0
 mouse.show
 TimerSet 0, 0, 1, 4
 END SUB
@@ -1217,7 +1220,7 @@ FOR i = 1 TO TimerMax
                         TmUsed(i) = 0
                         IF TmApp(i) = 0 THEN
                                 'kernel tag 1: take the notice off the bottom bar
-                                Repaint 0, 464, 639, 479
+                                Repaint 0, 0, 639, 15
                         ELSE
                                 AppTimer TmApp(i), TmWin(i), TmTag(i)
                         END IF
@@ -1233,53 +1236,117 @@ Repaint x1, y1, x2, y2
 END SUB
 
 '---------------------------------------------------------------------------
-'Desktop icons: a picture and a name on the background. A click on one starts
-'an instance of its app (AppLaunch). They are drawn with the background, so a
-'window that moves over one never needs to know about it.
+'The dock: an icon for each app along the bottom of the screen, drawn on top of
+'the windows. The pointer over it enlarges the icons near it (DockSize), up to
+'DockBase + DockExtra pixels, and a name shows over the one under it. A click
+'starts an instance of its app (AppLaunch). The icon centres stay where they
+'are; only the sizes change, so nothing else on the screen moves.
 '---------------------------------------------------------------------------
 SUB IconAdd (app, label$)
 IF IconCount >= 7 THEN EXIT SUB
 IconCount = IconCount + 1
 IconApp(IconCount) = app
 IconText(IconCount) = label$
-IconX(IconCount) = 24
-IconY(IconCount) = 16 + (IconCount - 1) * 64
 END SUB
 
-'The icon at a screen point, 0 for none. The name belongs to the icon.
-FUNCTION IconAt (mx, my)
-IconAt = 0
+'Left edge of the dock bar (the bar is centred on the screen).
+FUNCTION DockLeft
+DockLeft = (640 - IconCount * DockSlot - 16) \ 2
+END FUNCTION
+
+'Centre of icon i.
+FUNCTION DockCx (i)
+DockCx = DockLeft + 8 + DockSlot \ 2 + (i - 1) * DockSlot
+END FUNCTION
+
+'The size of icon i now: DockBase far from the pointer, DockBase + DockExtra
+'under it, in between linearly.
+FUNCTION DockSize (i)
+DockSize = DockBase
+IF DockHover < 0 THEN EXIT FUNCTION
+d = ABS(DockCx(i) - DockHover)
+IF d < DockReach THEN DockSize = DockBase + (DockExtra * (DockReach - d)) \ DockReach
+END FUNCTION
+
+'The icon at a screen point, 0 for none: its slot and its height as it is now.
+FUNCTION DockAt (mx, my)
+DockAt = 0
 FOR i = 1 TO IconCount
-        IF mx >= IconX(i) - 16 AND mx <= IconX(i) + 48 AND my >= IconY(i) AND my <= IconY(i) + 50 THEN IconAt = i
+        cx = DockCx(i)
+        IF mx >= cx - DockSlot \ 2 AND mx < cx + DockSlot \ 2 AND my >= 472 - DockSize(i) THEN DockAt = i
 NEXT
 END FUNCTION
 
-'Draw the icons that touch the clip, or the screen when there is no clip.
-SUB IconsDraw
-FOR i = 1 TO IconCount
-        x = IconX(i)
-        y = IconY(i)
-        n = LEN(IconText(i))
-        IF NOT Outside(x - 16, y, x + 48, y + 50) THEN
-                DrwBtn x, y, 31, 31
-                gBox x + 7, y + 8, x + 24, y + 23, 1
-                gFill x + 8, y + 9, x + 23, y + 11, 6
-                gFill x + 8, y + 12, x + 23, y + 22, 15
-                cout IconText(i), x + 16 - n * 4, y + 33, 15, n * 8, 0
-        END IF
+'The part of the screen the dock can cover, for a repaint.
+SUB DockZone (x1, y1, x2, y2)
+x1 = DockLeft - DockSlot \ 2
+x2 = DockLeft + IconCount * DockSlot + 16 + DockSlot \ 2
+y1 = 479 - DockBar - DockExtra - 22
+y2 = 479
+END SUB
+
+'-1 when a rectangle touches the part of the screen the dock can cover.
+FUNCTION DockTouches (x1, y1, x2, y2)
+DockTouches = 0
+IF IconCount = 0 THEN EXIT FUNCTION
+DockZone zx1, zy1, zx2, zy2
+DockTouches = NOT (x2 < zx1 OR x1 > zx2 OR y2 < zy1 OR y1 > zy2)
+END FUNCTION
+
+'One icon of size s with its top left corner at x, y: the picture of a window.
+SUB DockIcon (x, y, s)
+DrwBtn x, y, s - 1, s - 1
+gBox x + 7 * s \ 32, y + 8 * s \ 32, x + 24 * s \ 32, y + 23 * s \ 32, 1
+gFill x + 8 * s \ 32, y + 9 * s \ 32, x + 23 * s \ 32, y + 11 * s \ 32, 6
+gFill x + 8 * s \ 32, y + 12 * s \ 32, x + 23 * s \ 32, y + 22 * s \ 32, 15
+END SUB
+
+'Draw the dock (inside the clip): the bar, the icons from the smallest to the
+'largest so the largest are on top, and the name over the enlarged one.
+SUB DockDraw
+IF IconCount = 0 THEN EXIT SUB
+l = DockLeft
+w = IconCount * DockSlot + 16
+gFill l, 479 - DockBar, l + w, 479, 2
+gLine l, 479 - DockBar, l + w, 479 - DockBar, 3
+gLine l, 479 - DockBar, l, 479, 3
+gLine l + w, 480 - DockBar, l + w, 479, 1
+FOR s = DockBase TO DockBase + DockExtra
+        FOR i = 1 TO IconCount
+                IF DockSize(i) = s THEN
+                        x = DockCx(i) - s \ 2
+                        DockIcon x, 472 - s, s
+                        IF s > DockBase + 6 AND i = DockAt(DockHover, 479) THEN
+                                n = LEN(IconText(i))
+                                gFill DockCx(i) - n * 4 - 4, 472 - s - 22, DockCx(i) + n * 4 + 3, 472 - s - 4, 5
+                                cout IconText(i), DockCx(i) - n * 4, 472 - s - 22, 15, n * 8, 0
+                        END IF
+                END IF
+        NEXT
 NEXT
 END SUB
 
-'Fill a free part of the background and put the icons on it.
-SUB DeskFill (x1, y1, x2, y2)
-IF IconCount = 0 THEN
-        gFill x1, y1, x2, y2, 4
-ELSE
-        ClipOn x1, y1, x2, y2
-        gFill x1, y1, x2, y2, 4
-        IconsDraw
-        ClipOff
+'The pointer moved with no button down: enlarge the icons near it, and repaint
+'the dock when the sizes changed.
+SUB DockMove
+IF IconCount = 0 THEN EXIT SUB
+mouse.getpos mx, my
+h = -1
+DockZone zx1, zy1, zx2, zy2
+IF my >= 479 - DockBar - DockExtra - 22 AND mx >= zx1 AND mx <= zx2 THEN
+        FOR i = 1 TO IconCount
+                IF ABS(DockCx(i) - mx) < DockReach THEN h = (mx \ 4) * 4
+        NEXT
 END IF
+IF h <> DockHover THEN
+        DockHover = h
+        Repaint zx1, zy1, zx2, zy2
+END IF
+END SUB
+
+'Fill a free part of the background.
+SUB DeskFill (x1, y1, x2, y2)
+gFill x1, y1, x2, y2, 4
 END SUB
 
 'All windows, controls and heap blocks gone.
@@ -1533,8 +1600,9 @@ HSet who, WfY, ny
 WinRect who, nx1, ny1, nx2, ny2
 
 'The window in front shows all of itself, so its pixels can be copied. Only the
-'part that is on the screen before and after can be.
-IF WOrder(1) = who AND ClipActive = 0 THEN
+'part that is on the screen before and after can be. Not when the dock is over
+'either place: its pixels are not the window's, and it must stay on top.
+IF WOrder(1) = who AND ClipActive = 0 AND NOT DockTouches(ox1, oy1, ox2, oy2) AND NOT DockTouches(nx1, ny1, nx2, ny2) THEN
         sx1 = ox1: sx2 = ox2: sy1 = oy1: sy2 = oy2
         BlitSpan sx1, sx2, dx, 639
         BlitSpan sy1, sy2, dy, 479
@@ -1695,6 +1763,19 @@ IF only = 0 THEN
         FOR i = 1 TO n
                 DeskFill RL(c, i, 1), RL(c, i, 2), RL(c, i, 3), RL(c, i, 4)
         NEXT
+END IF
+'the dock is on top of everything: draw it over the part of the rectangle it touches
+IF IconCount > 0 THEN
+        DockZone zx1, zy1, zx2, zy2
+        IF zx1 < rx1 THEN zx1 = rx1
+        IF zy1 < ry1 THEN zy1 = ry1
+        IF zx2 > rx2 THEN zx2 = rx2
+        IF zy2 > ry2 THEN zy2 = ry2
+        IF zx1 <= zx2 AND zy1 <= zy2 THEN
+                ClipOn zx1, zy1, zx2, zy2
+                DockDraw
+                ClipOff
+        END IF
 END IF
 END SUB
 

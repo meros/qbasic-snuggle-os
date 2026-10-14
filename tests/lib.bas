@@ -229,3 +229,24 @@ gFill x1, y1, x2, y2, 9
 RepaintRect x1, y1, x2, y2
 CompareToLegacy lbl$
 END SUB
+
+SUB MsClear
+MsN = 0
+MsI = 0
+END SUB
+
+SUB MsAdd (x, y, b)
+MsN = MsN + 1
+MsX(MsN) = x
+MsY(MsN) = y
+MsB(MsN) = b
+END SUB
+
+'A click: the button goes down and up at one place, then one main loop pass.
+SUB Click (x, y)
+MsClear
+MsAdd x, y, 1
+MsAdd x, y, 0
+MainStep
+MsClear
+END SUB

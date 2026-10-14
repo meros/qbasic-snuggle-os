@@ -128,26 +128,37 @@ CompareToLegacy "maximise it again"
 IconCase
 END SUB
 
-'Desktop icons are part of the background: they show where it shows, and a
-'window moved over them leaves them whole.
+'The dock is on top of the windows, enlarges the icons near the pointer, and a
+'click on an icon starts its app.
 SUB IconCase
+NoSync = -1
 Scene 1
 IconCount = 0
+DockHover = -1
 IconAdd 1, "Hello"
 IconAdd 1, "Other"
 RepaintRect 0, 0, 639, 479
-CompareToLegacy "desktop: icons on the background"
-Check "an icon takes a click", IconAt(30, 20) = 1 AND IconAt(30, 90) = 2, STR$(IconAt(30, 20)) + STR$(IconAt(30, 90))
-Check "the desktop between icons is no icon", IconAt(300, 400) = 0 AND IconAt(30, 70) = 0, ""
-WinMoveTo 3, 10, 10
-CompareToLegacy "desktop: a window moved over the icons"
-WinMoveTo 3, 400, 300
-CompareToLegacy "desktop: the icons come back"
+CompareToLegacy "dock: on the desktop"
+Check "dock: icons are small when the pointer is away", DockSize(1) = DockBase AND DockSize(2) = DockBase, STR$(DockSize(1))
+WinMoveTo 3, 250, 380
+CompareToLegacy "dock: a window moved under it stays below"
+MsClear
+MsAdd DockCx(1), 450, 0
+MainStep
+Check "dock: the icon under the pointer is enlarged, its neighbour less", DockSize(1) >= DockBase + DockExtra - 2 AND DockSize(2) > DockBase AND DockSize(2) < DockSize(1), STR$(DockSize(1)) + STR$(DockSize(2))
+CompareToLegacy "dock: enlarged under the pointer"
+Check "dock: a point over the enlarged icon finds it", DockAt(DockCx(1), 430) = 1, STR$(DockAt(DockCx(1), 430))
+MsClear
+MsAdd 600, 100, 0
+MainStep
+Check "dock: icons are small again when the pointer leaves", DockSize(1) = DockBase AND DockHover = -1, STR$(DockSize(1))
+CompareToLegacy "dock: back to small"
 before = WNumber
-AppLaunch 1
-Check "an icon launch makes one window", WNumber = before + 1 AND AppGet(WNew, 0) > 0, STR$(WNumber)
-CompareToLegacy "desktop: a launched window is painted"
+Click DockCx(1), 460
+Check "dock: a click on an icon launches its app", WNumber = before + 1, STR$(WNumber)
+CompareToLegacy "dock: a launched window is above the desktop and below the dock"
 WinClose WNew
-CompareToLegacy "desktop: a closed window uncovers the icons"
 IconCount = 0
+DockHover = -1
+NoSync = 0
 END SUB

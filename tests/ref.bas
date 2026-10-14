@@ -80,10 +80,11 @@ END SUB
 'Whole screen, back to front: the reference image for any window state.
 SUB RefPaintAll
 gFill 0, 0, 639, 479, 4
-IconsDraw
 FOR Cyc = WNumber TO 1 STEP -1
         RefWinDrwMng WOrder(Cyc)
 NEXT
+'the dock is on top of every window
+DockDraw
 END SUB
 
 SUB LegacyUnDrw (who)
