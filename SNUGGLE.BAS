@@ -33,6 +33,12 @@ DIM SHARED HOwner(HeapMax) AS INTEGER   'window the block belongs to (a window o
 DIM SHARED HKind(HeapMax) AS INTEGER    'KWin, KCtl or KData
 DIM SHARED HText(HeapMax) AS STRING     'title of a window, caption of a control
 DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
+DIM SHARED TmUsed(8) AS INTEGER         'timers: what to call and when (see TimerSet)
+DIM SHARED TmApp(8) AS INTEGER
+DIM SHARED TmWin(8) AS INTEGER
+DIM SHARED TmTag(8) AS INTEGER
+DIM SHARED TmStart(8) AS SINGLE
+DIM SHARED TmDur(8) AS SINGLE
 DIM SHARED OomFlag AS INTEGER           '-1 when a block could not be had, set by MemAlloc
 DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
 DIM SHARED WNew AS INTEGER              'the window NewWin made last, 0 when it could not
@@ -143,6 +149,7 @@ IF CtlEvent <> 0 THEN
         AppEvent HOwner(CtlEvent), CtlEvent
         CtlEvent = 0
 END IF
+TimersRun
 IF UCASE$(k$) = "R" THEN refresh
 LOOP UNTIL UCASE$(k$) = "Q"
 '@@RUN-END
@@ -207,6 +214,14 @@ ELSE
 END IF
 END SUB
 
+'A timer of app set with TimerSet ran out.
+SUB AppTimer (app, win, tag)
+SELECT CASE app
+CASE 1
+        HelloTimer win, tag
+END SELECT
+END SUB
+
 'A control of window win was clicked or accepted.
 SUB AppEvent (win, ctl)
 SELECT CASE HGet(win, WfApp)
@@ -236,11 +251,17 @@ AppSet w, HelloWipe, CtlAdd(w, CtlButton, 100, 140, 80, 26, "Clear")
 AppSet w, HelloMsg, CtlAdd(w, CtlLabel, 8, 178, 262, 16, "Ready")
 END SUB
 
+'Tag 1: the greeting goes back to Ready.
+SUB HelloTimer (w, tag)
+CtlSetText AppGet(w, HelloMsg), "Ready"
+END SUB
+
 SUB HelloEvent (w, ctl)
 msg = AppGet(w, HelloMsg)
 SELECT CASE ctl
 CASE AppGet(w, HelloOk)
         CtlSetText msg, "Hello, " + CtlGetText$(AppGet(w, HelloWho))
+        TimerSet 1, w, 1, 5
 CASE AppGet(w, HelloWipe)
         CtlSetText AppGet(w, HelloWho), ""
         CtlSetText msg, "Ready"
@@ -481,6 +502,9 @@ FOR i = p TO WNumber - 1
 NEXT
 WNumber = WNumber - 1
 MemFreeAll who
+FOR i = 1 TO 8
+        IF TmWin(i) = who AND TmApp(i) > 0 THEN TmUsed(i) = 0
+NEXT
 IF HSize(CtlFocus) = 0 THEN CtlFocus = 0
 IF HSize(CtlDown) = 0 THEN CtlDown = 0
 mouse.hide
@@ -496,6 +520,54 @@ mouse.hide
 gFill 0, 464, 639, 479, 5
 cout msg$, 8, 463, 15, 624, 0
 mouse.show
+TimerSet 0, 0, 1, 4
+END SUB
+
+'---------------------------------------------------------------------------
+'Timers. TimerSet(app, win, tag, seconds) makes the kernel call back once, when
+'the time is up, from the main loop (TimersRun): the kernel for app 0, else
+'AppTimer app, win, tag. The same app, window and tag set again starts over.
+'A window's timers go when it closes. The clock is the system clock (TIMER),
+'good to about 1/100 s; a callback waits while the program is in a drag or a
+'button press.
+'---------------------------------------------------------------------------
+SUB TimerSet (app, win, tag, secs!)
+s = 0
+FOR i = 1 TO 8
+        IF TmUsed(i) THEN
+                IF TmApp(i) = app AND TmWin(i) = win AND TmTag(i) = tag THEN s = i
+        ELSEIF f = 0 THEN
+                f = i
+        END IF
+NEXT
+IF s = 0 THEN s = f
+IF s = 0 THEN EXIT SUB
+TmUsed(s) = -1
+TmApp(s) = app
+TmWin(s) = win
+TmTag(s) = tag
+TmStart(s) = TIMER
+TmDur(s) = secs!
+END SUB
+
+SUB TimersRun
+FOR i = 1 TO 8
+        IF TmUsed(i) THEN
+                e! = TIMER - TmStart(i)
+                IF e! < 0 THEN e! = e! + 86400
+                IF e! >= TmDur(i) THEN
+                        TmUsed(i) = 0
+                        IF TmApp(i) = 0 THEN
+                                'kernel tag 1: take the notice off the bottom bar
+                                mouse.hide
+                                RepaintRect 0, 464, 639, 479
+                                mouse.show
+                        ELSE
+                                AppTimer TmApp(i), TmWin(i), TmTag(i)
+                        END IF
+                END IF
+        END IF
+NEXT
 END SUB
 
 'Repaint the area of a window, for a window that was just made.

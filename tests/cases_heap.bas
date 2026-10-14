@@ -2,6 +2,7 @@
 SUB RunAll
 HeapCase
 OomCase
+TimerCase
 END SUB
 
 SUB HeapCase
@@ -100,4 +101,36 @@ n = WNumber: tp = HeapTop
 AppLaunch 1
 Check "oom launch: no handle for the controls, the half made instance is closed", WNumber = n AND HeapTop = tp AND OomFlag, STR$(WNumber) + STR$(HeapTop)
 WinReset
+END SUB
+
+'A notice leaves the bar when its time is up, and a closed window's timers go.
+SUB TimerCase
+Scene 1
+RepaintRect 0, 0, 639, 479
+Notice "Out of memory. The app was not started."
+Check "timer: the notice sets a kernel timer", TmUsed(1) AND TmApp(1) = 0, ""
+TimersRun
+Check "timer: not yet due", TmUsed(1) <> 0, ""
+TimerSet 0, 0, 1, 0
+TimersRun
+Check "timer: when due it runs once", TmUsed(1) = 0, ""
+CompareToLegacy "timer: the bar is repainted away"
+w = AppWindow(1, "Hello", 170, 100, 300, 240, 7)
+AppSet w, HelloMsg, CtlAdd(w, CtlLabel, 8, 178, 262, 16, "Hello, x")
+TimerSet 1, w, 1, 0
+TimersRun
+Check "timer: an app callback ran", CtlGetText$(AppGet(w, HelloMsg)) = "Ready", CtlGetText$(AppGet(w, HelloMsg))
+TimerSet 1, w, 1, 100
+TimerSet 1, w, 1, 100
+used = 0
+FOR i = 1 TO 8
+        IF TmUsed(i) THEN used = used + 1
+NEXT
+Check "timer: the same timer set again is one timer", used = 1, STR$(used)
+WinClose w
+used = 0
+FOR i = 1 TO 8
+        IF TmUsed(i) THEN used = used + 1
+NEXT
+Check "timer: closing a window drops its timers", used = 0, STR$(used)
 END SUB

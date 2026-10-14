@@ -86,6 +86,7 @@ procedure in `AppStartAll`/`AppLaunch`, and a case in `AppEvent`.
 | `AppGet(win, i)`, `AppSet win, i, v` | Word i of the window's data block (control numbers, state). An index outside the block is refused. |
 | `AppEvent win, ctl` | Called by the kernel when a control of the window was clicked or accepted. |
 | `WinClose win` | Closes the window: its controls and data are freed and the heap is compacted, the area is repainted. The close button calls it. |
+| `TimerSet(app, win, tag, seconds)` | One callback after the time: the kernel for app 0, else `AppTimer app, win, tag`. The same app, window and tag set again starts over. A closed window's timers go. The clock is `TIMER`; a callback waits while a drag or a button press runs. |
 
 The heap is one 4 KB array and the only allocator. A window, a control and an
 app data block are blocks of it, used through handles; the handle is the id of
