@@ -1,3 +1,0 @@
-# The generated program keeps its CRLF line endings, whatever core.autocrlf says,
-# so a checkout is byte for byte what scripts/build.py writes.
-SNUGGLE.BAS -text

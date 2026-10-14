@@ -1,0 +1,13 @@
+[package]
+name = "snuggle-web"
+description = "Hosts the Snuggle OS page (original and modern), and the chat server for it, over HTTP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+snuggle-chat = { path = "../snuggle-chat" }
+
+[[bin]]
+name = "snuggle-web"
+path = "src/main.rs"

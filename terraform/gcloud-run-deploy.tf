@@ -28,9 +28,20 @@ resource "google_cloud_run_service" "default" {
 
 
   template {
+    metadata {
+      annotations = {
+        "autoscaling.knative.dev/maxScale" = "1"
+      }
+    }
     spec {
+      # one instance: the chat hub lives in the process, so rooms are shared
+      # by the visitors of that instance only
+      container_concurrency = 80
       containers {
         image = "gcr.io/${var.project_id}/snuggleos:${var.git_sha}"
+        ports {
+          container_port = 8080
+        }
       }
     }
   }

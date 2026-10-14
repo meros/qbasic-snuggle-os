@@ -11,14 +11,14 @@ Snuggle OS (Chat app, QBasic)     COM1 ──serial──▶ DOSBox "nullmodem" 
                                               snuggle-chat-server (Rust)
 ```
 
-- **`chat/` snuggle-chat-server** keeps the names, the rooms and the
+- **`crates/snuggle-chat` snuggle-chat-server** keeps the names, the rooms and the
   direct messages. Plain TCP, one line of ASCII per message.
-- **`chat/` snuggle-chat-relay** is the host side of the serial port. DOSBox
+- **`crates/snuggle-chat` snuggle-chat-relay** is the host side of the serial port. DOSBox
   listens (`serial1=nullmodem port:7001 transparent:1`) and the relay dials it,
   because DOSBox as a client never retries. The relay keeps its own link to the
   server, cleans the lines (printable ASCII, 200 characters), and tells the OS
   what is going on.
-- **`apps/chat.bas`** is the app: a log of 12 lines, a status line, an input box.
+- **`os/apps/chat.bas`** is the app: a log of 12 lines, a status line, an input box.
   Text goes to the room; `/name x`, `/join room`, `/dm user text` and `/who` are
   commands.
 
@@ -28,10 +28,12 @@ Snuggle OS (Chat app, QBasic)     COM1 ──serial──▶ DOSBox "nullmodem" 
 nix run .#chat-server                  # listens on 127.0.0.1:7000
 nix run .#chat-relay                   # dials DOSBox on 7001, the server on 7000
 nix run .                              # the launcher's DOSBox listens on 7001
-# without nix: cd chat && cargo build --release, then the same two binaries
+# without nix: cargo build --release, then the same two binaries in target/release
 ```
 
-Start the Chat app from the dock. The relay can be started before DOSBox, after
+In a browser the lines go through two files and the page instead of COM1 (docs/WEB.md).
+
+Start the Chat app from its desktop icon. The relay can be started before DOSBox, after
 it, or again after a stop: it dials until DOSBox answers.
 
 ## Protocol
@@ -72,7 +74,7 @@ its port after the relay made the link and miss `STATUS UP`.
 
 ## Tests
 
-`scripts/test-chat.sh` runs the Rust unit tests (the hub: names, rooms, direct
+`snuggle test chat chatloss` runs the Rust unit tests (the hub: names, rooms, direct
 messages, lost connections), then two QBasic programs in headless DOSBox with the
 real server and relay and a scripted peer: **chat** (connect, join, message, direct
 message, `/who`, `/join`, an error) and **chatloss** (no relay at start, a relay

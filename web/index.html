@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snuggle OS</title>
+<link rel="stylesheet" href="snuggle.css">
+</head>
+<body>
+<div id="crt">
+  <pre id="term" aria-live="polite"></pre>
+  <canvas id="screen" width="640" height="480" hidden></canvas>
+  <!-- takes the keys (and the keyboard on a phone) while the terminal shows -->
+  <input id="kbd" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="DOS command line">
+</div>
+<div id="foot">
+  <span id="relay"></span>
+  <button id="reboot" hidden>Reboot</button>
+</div>
+<script src="js-dos.js"></script>
+<script src="snuggle.js"></script>
+</body>
+</html>

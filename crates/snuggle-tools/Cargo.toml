@@ -1,0 +1,10 @@
+[package]
+name = "snuggle-tools"
+description = "Builds the Snuggle OS program from its parts, generates its API reference, and runs its tests in headless DOSBox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "snuggle"
+path = "src/main.rs"

@@ -1,4 +1,7 @@
-docs/qbasic/
-build/
-*.GCR
-__pycache__/
+# build output
+/target/
+/result
+/result-*
+
+# QBasic reference pages (third party text): nix run .#fetch-docs
+/docs/qbasic/

@@ -1,0 +1,21 @@
+[package]
+name = "snuggle-chat"
+description = "Chat for Snuggle OS: the protocol, the server, the host relay for the serial port, a test peer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "snuggle-chat-server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "snuggle-chat-relay"
+path = "src/bin/relay.rs"
+
+[[bin]]
+name = "snuggle-chat-peer"
+path = "src/bin/peer.rs"

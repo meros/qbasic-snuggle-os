@@ -1,0 +1,45 @@
+name: Deploy
+
+# The page (original and modern Snuggle OS, with the chat server) as a container
+# on Cloud Run. It needs the secrets of the original repository, so it runs only
+# there and only on master.
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    if: github.repository == 'meros/qbasic-snuggle-os'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Check
+        run: nix flake check --print-build-logs
+      - name: Build the image
+        run: nix build .#web-image --out-link image.tar.gz
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.RUN_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.RUN_PROJECT }}
+      - name: Push the image
+        run: |
+          gcloud auth configure-docker --quiet
+          docker load < image.tar.gz
+          docker tag snuggleos:latest "gcr.io/${{ secrets.RUN_PROJECT }}/snuggleos:${GITHUB_SHA}"
+          docker push "gcr.io/${{ secrets.RUN_PROJECT }}/snuggleos:${GITHUB_SHA}"
+      - uses: hashicorp/setup-terraform@v3
+      - name: Deploy
+        working-directory: terraform
+        run: |
+          terraform init
+          terraform workspace select "${GITHUB_REF##*/}" || terraform workspace new "${GITHUB_REF##*/}"
+          terraform apply -auto-approve
+        env:
+          TF_VAR_git_sha: ${{ github.sha }}
+          TF_VAR_project_id: ${{ secrets.RUN_PROJECT }}
