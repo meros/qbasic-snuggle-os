@@ -381,14 +381,14 @@ AppSet w, CalcFresh, 1
 AppSet w, CalcDisp, CtlAdd(w, CtlLabel, 8, 6, 176, 16, "0")
 END SUB
 
-'The keys. Button ids are 0 to 15 for the grid and 16 for C.
+'The keys. Button ids are 1 to 16 for the grid and 17 for C (0 means none).
 SUB CalcPaint (w)
 keys$ = "789/456*123-0.=+"
 FOR i = 0 TO 15
         k$ = MID$(keys$, i + 1, 1)
-        IF UiButton(i, 8 + (i MOD 4) * 44, 32 + (i \ 4) * 34, 40, 28, k$) THEN CalcKey w, k$
+        IF UiButton(i + 1, 8 + (i MOD 4) * 44, 32 + (i \ 4) * 34, 40, 28, k$) THEN CalcKey w, k$
 NEXT
-IF UiButton(16, 8, 168, 84, 28, "C") THEN CalcKey w, "C"
+IF UiButton(17, 8, 168, 84, 28, "C") THEN CalcKey w, "C"
 END SUB
 
 SUB CalcKey (w, k$)
@@ -696,7 +696,7 @@ END SUB
 'time its window is painted, with UiButton and UiLabel, and the kernel runs the
 'same procedure to find a click. So they cost no heap and no handles, and their
 'state is whatever the app keeps in its data block. A button id is a number the
-'app chooses; it is unique in the procedure.
+'app chooses, 1 or more and unique in the procedure (0 means no button).
 '  mode 0 draws, mode 1 finds the button under the pointer, mode 2 returns -1
 '  for the button that was clicked, and the app does the work in its IF.
 '---------------------------------------------------------------------------

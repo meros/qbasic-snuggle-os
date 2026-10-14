@@ -178,12 +178,12 @@ Check "clock: closing it drops the timer", armed = 0, STR$(armed)
 END SUB
 
 'Press the calculator keys in k$ one after another (as immediate mode button
-'clicks, by id) and return the display.
+'clicks, by id: 1 to 16 and 17 for C) and return the display.
 FUNCTION CalcKeys$ (w, k$)
 keys$ = "789/456*123-0.=+"
 FOR j = 1 TO LEN(k$)
         ch$ = MID$(k$, j, 1)
-        IF ch$ = "C" THEN id = 16 ELSE id = INSTR(keys$, ch$) - 1
+        IF ch$ = "C" THEN id = 17 ELSE id = INSTR(keys$, ch$)
         UiFire w, id
 NEXT
 CalcKeys$ = CtlGetText$(AppGet(w, CalcDisp))
@@ -206,12 +206,13 @@ CompareToLegacy "calc: the window with its keys"
 WinRect w, wx1, wy1, wx2, wy2
 ox = wx1 + 3
 oy = wy1 + TtlHeight + 4
+Check "calc: nothing is held, so no key looks pressed", POINT(ox + 9, oy + 33) = 15, STR$(POINT(ox + 9, oy + 33))
 UiMx = ox + 8 + 5: UiMy = oy + 32 + 5: UiHitId = 0: UiRun w, 1
-Check "calc: the point over 7 finds button 0", UiHitId = 0 AND UiHx1 = ox + 8, STR$(UiHitId)
+Check "calc: the point over 7 finds button 1", UiHitId = 1 AND UiHx1 = ox + 8, STR$(UiHitId)
 UiMx = ox + 8 + 44 * 3 + 5: UiMy = oy + 32 + 34 * 3 + 5: UiHitId = -1: UiRun w, 1
-Check "calc: the point over + finds button 15", UiHitId = 15, STR$(UiHitId)
+Check "calc: the point over + finds button 16", UiHitId = 16, STR$(UiHitId)
 UiMx = ox + 10: UiMy = oy + 168 + 5: UiHitId = -1: UiRun w, 1
-Check "calc: the point over C finds button 16", UiHitId = 16, STR$(UiHitId)
+Check "calc: the point over C finds button 17", UiHitId = 17, STR$(UiHitId)
 UiMx = ox + 8 + 40 + 2: UiMy = oy + 32 + 5: UiHitId = -1: UiRun w, 1
 Check "calc: the gap between keys finds none", UiHitId = -1, STR$(UiHitId)
 Check "calc: 12 + 7 =", CalcKeys$(w, "12+7=") = "19", CalcKeys$(w, "")

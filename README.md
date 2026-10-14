@@ -126,12 +126,12 @@ procedure declares such controls every time its window is painted:
 
 ```
 SUB CalcPaint (w)
-IF UiButton(0, 8, 32, 40, 28, "7") THEN CalcKey w, "7"
+IF UiButton(1, 8, 32, 40, 28, "7") THEN CalcKey w, "7"
 UiLabel 8, 6, 176, 16, "Total"
 END SUB
 ```
 
-`UiButton(id, x, y, w, h, caption$)` draws the button, and the kernel runs the
+`UiButton(id, x, y, w, h, caption$)` draws the button (`id` is a number of your choice, 1 or more, unique in the procedure), and the kernel runs the
 same procedure again to find a click: the button looks pressed while the pointer
 is on it, and `UiButton` returns -1 for the clicked id when the mouse button
 goes up on it. Nothing is stored: no block, no handle, no control number. The

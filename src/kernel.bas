@@ -477,7 +477,7 @@ END SUB
 'time its window is painted, with UiButton and UiLabel, and the kernel runs the
 'same procedure to find a click. So they cost no heap and no handles, and their
 'state is whatever the app keeps in its data block. A button id is a number the
-'app chooses; it is unique in the procedure.
+'app chooses, 1 or more and unique in the procedure (0 means no button).
 '  mode 0 draws, mode 1 finds the button under the pointer, mode 2 returns -1
 '  for the button that was clicked, and the app does the work in its IF.
 '---------------------------------------------------------------------------
