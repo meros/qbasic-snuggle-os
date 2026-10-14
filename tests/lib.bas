@@ -108,7 +108,7 @@ gFill 0, 0, 639, 479, 8
 SELECT CASE kind
 CASE 1: WinDrwBrd x1, y1, x2, y2
 CASE 2: WinDrwTtl x1, y1, x2, y2
-CASE 3: DrwBtn x1, y1, x2 - x1, y2 - y1, 1
+CASE 3: DrwBtn x1, y1, x2 - x1, y2 - y1
 END SELECT
 SnapNo = SnapNo + 1
 Dump "A"

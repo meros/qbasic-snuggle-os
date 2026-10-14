@@ -5,76 +5,6 @@
 'Mark K. Kim for the Vmouse routine (Couldn't have done it without you!!)
 
 
-DECLARE FUNCTION CheckIfWinBtn% (who%)
-DECLARE SUB refresh ()
-DECLARE SUB StartXYDrag (what%, who%)
-DECLARE FUNCTION CheckIfBorder% (what%, who%)
-DECLARE SUB WinPutTop (who%)
-DECLARE FUNCTION CheckIfWinArea% (who%)
-DECLARE SUB WinMakeHighest (num%)
-DECLARE SUB WinMoveTo (who%, nx%, ny%)
-DECLARE SUB WinSizeTo (who%, nw%, nh%)
-DECLARE SUB WinSetState (who%, st%)
-DECLARE SUB WinRect (who%, x1%, y1%, x2%, y2%)
-DECLARE SUB RepaintRect (x1%, y1%, x2%, y2%)
-DECLARE SUB RepaintChange (ox1%, oy1%, ox2%, oy2%, nx1%, ny1%, nx2%, ny2%)
-DECLARE SUB WaitRetrace ()
-DECLARE SUB ClipOn (x1%, y1%, x2%, y2%)
-DECLARE SUB ClipOff ()
-DECLARE FUNCTION CtlAdd% (win%, kind%, x%, y%, w%, h%, cap$)
-DECLARE SUB CtlReset ()
-DECLARE SUB CtlRect (id%, x1%, y1%, x2%, y2%)
-DECLARE FUNCTION CtlVisible% (id%)
-DECLARE SUB CtlDraw (id%)
-DECLARE SUB CtlDrawAll (who%)
-DECLARE SUB CtlRedraw (id%)
-DECLARE FUNCTION CtlHit% (who%, mx%, my%)
-DECLARE FUNCTION CtlAt% (mx%, my%)
-DECLARE SUB CtlActivate (id%)
-DECLARE SUB CtlSelect (id%)
-DECLARE SUB CtlTrack (id%)
-DECLARE SUB CtlKey (k$)
-DECLARE SUB CtlSetFocus (id%)
-DECLARE SUB CtlSetText (id%, t$)
-DECLARE FUNCTION CtlGetText$ (id%)
-DECLARE SUB CtlSetChecked (id%, v%)
-DECLARE FUNCTION CtlGetChecked% (id%)
-DECLARE SUB gCircle (x%, y%, r%, c%)
-DECLARE SUB gGet (x1%, y1%, x2%, y2%)
-DECLARE SUB gGlyph (gx%, gy%, num%, colo%, st%)
-DECLARE SUB gGetSprite (so%)
-DECLARE SUB gPut (x%, y%)
-DECLARE SUB BlitMove (x1%, y1%, x2%, y2%, dx%, dy%)
-DECLARE SUB RepaintMinus (x1%, y1%, x2%, y2%, dx1%, dy1%, dx2%, dy2%)
-DECLARE FUNCTION Outside% (x1%, y1%, x2%, y2%)
-DECLARE SUB gView (x1%, y1%, x2%, y2%)
-DECLARE SUB gViewOff ()
-DECLARE SUB gFill (x1%, y1%, x2%, y2%, c%)
-DECLARE SUB gBox (x1%, y1%, x2%, y2%, c%)
-DECLARE SUB gLine (x1%, y1%, x2%, y2%, c%)
-DECLARE SUB gPset (x%, y%, c%)
-DECLARE SUB StartDrag (who%)
-DECLARE SUB MouseCall (ax%, bx%, cx%, dx%)
-DECLARE SUB Pal (i%, r%, g%, b%)
-DECLARE SUB mouse.getpos (x%, y%)
-DECLARE FUNCTION CheckIfTitle% (who%)
-DECLARE SUB NewWin (text$, x%, y%, w%, h%)
-DECLARE SUB DrwBtn (x%, y%, w%, h%, up%)
-DECLARE SUB GetStats (who%, text$, x%, y%, w%, h%, state%)
-DECLARE SUB WinDrwMng (who%)
-DECLARE SUB WinDrw (text$, x%, y%, w%, h%, state%, btnA%, btnB%, ctnC%)
-DECLARE SUB MaxButton (x%, y%)
-DECLARE SUB MinButton (x%, y%)
-DECLARE SUB QuitButton (x%, y%)
-DECLARE SUB cout (text$, sx%, sy%, colo%, Lengh%, break%)
-DECLARE SUB Init ()
-DECLARE SUB CoutSetup ()
-DECLARE SUB mouse.show ()
-DECLARE SUB mouse.hide ()
-DECLARE FUNCTION mouse.enable% ()
-DECLARE FUNCTION mouse.getbutton% ()
-DECLARE SUB WinDrwBrd (x1%, y1%, x2%, y2%)
-DECLARE SUB WinDrwTtl (x1%, y1%, x2%, y2%)
 '***************
 CONST LB = &H1      'constant for left button
 '***************
@@ -97,11 +27,8 @@ TYPE CtlRec
         grp AS INTEGER          'radio buttons with the same window and group exclude each other
         cap AS STRING * 40      'caption, or the text of a text box
 END TYPE
-DIM SHARED GlyphFirst(255) AS INTEGER   'glyph n is GlyphRuns(n) horizontal runs, from GlyphData(GlyphFirst(n))
-DIM SHARED GlyphRuns(255) AS INTEGER    'a run is packed as row * 64 + first column * 8 + last column
-DIM SHARED GlyphData(3600) AS INTEGER   'the screen font needs 3167 runs
-DIM SHARED GlyphBuf(40) AS INTEGER
-DIM SHARED GlyphTop AS INTEGER
+DIM SHARED GlyphData(1023) AS INTEGER   'characters 128 to 255, 16 row bytes each (characters 32 to 127 are read from SprData)
+DIM SHARED Mask(15) AS INTEGER          'the 16 row bytes of the glyph being drawn, bit 7 is the left pixel
 
 DIM SHARED WNMax AS INTEGER
 WNMax = 10
@@ -109,14 +36,8 @@ DIM SHARED WNumber AS INTEGER
 DIM SHARED WGData(WNMax, 6) AS INTEGER
 DIM SHARED WTData(WNMax) AS STRING
 DIM SHARED WOrder(WNMax) AS INTEGER
-DIM SHARED FreeRX1(64) AS INTEGER   'Repaint work list: rectangles still to paint
-DIM SHARED FreeRY1(64) AS INTEGER
-DIM SHARED FreeRX2(64) AS INTEGER
-DIM SHARED FreeRY2(64) AS INTEGER
-DIM SHARED NextRX1(64) AS INTEGER   'the list being built for the next window
-DIM SHARED NextRY1(64) AS INTEGER
-DIM SHARED NextRX2(64) AS INTEGER
-DIM SHARED NextRY2(64) AS INTEGER
+DIM SHARED RL(1, 64, 4) AS INTEGER  'Repaint work lists of rectangles (x1, y1, x2, y2): the ones still to
+                                        'paint, and the ones left after the next window. They swap roles.
 DIM SHARED ClipCol AS INTEGER           'a clip one pixel thick is padded; these save the pixels
 DIM SHARED ClipColX AS INTEGER          'the padding covers, so ClipOff can put them back
 DIM SHARED ClipColY AS INTEGER
@@ -134,14 +55,13 @@ DIM SHARED SprFg(2) AS INTEGER          'text styles: colour of the glyph and of
 DIM SHARED SprBg(2) AS INTEGER
 DIM SHARED CoutBg AS INTEGER            'background colour behind the text cout draws, -1 for unknown
 DIM SHARED NoSync AS INTEGER           'the tests set it: no wait for the retrace
-DIM SHARED BlitBuf(4100) AS INTEGER      'one band of screen rows (8000 bytes), for BlitMove
 DIM SHARED ClipActive AS INTEGER        'cout skips glyphs outside the clip
 DIM SHARED ClipLX1 AS INTEGER
 DIM SHARED ClipLY1 AS INTEGER
 DIM SHARED ClipLX2 AS INTEGER
 DIM SHARED ClipLY2 AS INTEGER
-DIM SHARED ClipColBuf(1000) AS INTEGER  '1 x 480 pixels, four planes
-DIM SHARED ClipRowBuf(170) AS INTEGER   '640 x 1 pixels
+DIM SHARED Scratch(4100) AS INTEGER     'GET and PUT buffer: BlitMove uses all of it (8000 bytes), ClipOn saves
+                                        'a column in 0 to 961 and a row in 1000 to 1162
 DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
 DIM SHARED MouseOK AS INTEGER
 DIM SHARED MouseVis AS INTEGER
@@ -174,51 +94,46 @@ refresh
 
 DO
 IF mouse.getbutton = LB THEN
+mouse.getpos cmx, cmy
 FOR Cyc = 1 TO WNumber
 CW = WOrder(Cyc)
-GetStats CW, crap$, wx, wy, ww, wh, wstate
-        IF CheckIfWinBtn(CW) > 0 THEN
-                LOCATE 1, 1
-                DO: LOOP WHILE mouse.getbutton = LB
-                WinPutTop CW
-                SELECT CASE CheckIfWinBtn(CW)
-                CASE 1
-                CASE 2
-                        IF WGData(CW, 5) <> 2 THEN WinSetState CW, 2 ELSE WinSetState CW, 1
-                CASE 3
-                        IF WGData(CW, 5) <> 0 THEN WinSetState CW, 0 ELSE WinSetState CW, 1
-                CASE ELSE
-                END SELECT
-                EXIT FOR
-        END IF
-        IF CheckIfTitle(CW) THEN
-                CtlSetFocus 0
-                WinPutTop CW
-                IF wstate <> 2 THEN StartDrag CW
-                EXIT FOR
-        END IF
-        Ext = 0
-        FOR temp = 3 TO 1 STEP -1
-        IF CheckIfBorder(temp, CW) THEN
-                WinPutTop CW
-                IF wstate <> 2 THEN StartXYDrag temp, CW
-                Ext = 1
-        END IF
-        NEXT
-        IF Ext = 1 THEN EXIT FOR
+part = WinPart(CW, cmx, cmy)
+cid = 0
+IF part = 8 THEN cid = CtlHit(CW, cmx, cmy)
+SELECT CASE part
+CASE 0
+CASE 1 TO 3
+        'a title bar button counts when the button goes up on it
+        DO: LOOP WHILE mouse.getbutton = LB
+        WinPutTop CW
         mouse.getpos cmx, cmy
-        cid = CtlHit(CW, cmx, cmy)
+        SELECT CASE WinPart(CW, cmx, cmy)
+        CASE 2
+                IF WGData(CW, 5) <> 2 THEN WinSetState CW, 2 ELSE WinSetState CW, 1
+        CASE 3
+                IF WGData(CW, 5) <> 0 THEN WinSetState CW, 0 ELSE WinSetState CW, 1
+        END SELECT
+        EXIT FOR
+CASE 4
+        CtlSetFocus 0
+        WinPutTop CW
+        IF WGData(CW, 5) <> 2 THEN StartDrag 0, CW
+        EXIT FOR
+CASE 5 TO 7
+        WinPutTop CW
+        IF WGData(CW, 5) <> 2 THEN StartDrag part - 4, CW
+        EXIT FOR
+CASE 8
         IF cid > 0 THEN
                 WinPutTop CW
                 CtlTrack cid
-                EXIT FOR
-        END IF
-        IF CheckIfWinArea(CW) THEN
+        ELSE
                 CtlSetFocus 0
                 DO: LOOP WHILE mouse.getbutton = LB
                 WinPutTop CW
-                EXIT FOR
         END IF
+        EXIT FOR
+END SELECT
 NEXT
 END IF
 k$ = INKEY$
@@ -241,71 +156,33 @@ LOOP UNTIL UCASE$(k$) = "Q"
 '@@RUN-END
 
 '@@HIT-BEGIN
-FUNCTION CheckIfBorder (what, who)
-GetStats who, crap$, wx, wy, ww, wh, wstate
-mouse.getpos x, y
-SELECT CASE what
-CASE 1
-MinX = wx + ww - 3
-MaxX = wx + ww
-MinY = wy + 19
-MaxY = wy + wh
-CASE 2
-MinX = wx
-MaxX = wx + ww
-MinY = wy + wh - 3
-MaxY = wy + wh
-CASE 3
-MinX = wx + ww - 3
-MaxX = wx + ww
-MinY = wy + wh - 3
-MaxY = wy + wh
-CASE ELSE
-END SELECT
-IF x >= MinX AND x <= MaxX AND y >= MinY AND y <= MaxY THEN
-CheckIfBorder = 1
-END IF
-END FUNCTION
-
-FUNCTION CheckIfTitle (who)
-mouse.getpos mx, my
+'What is at a screen point in a window: 1 to 3 the title bar buttons (1 is the
+'rightmost), 4 the title bar, 5 the right border, 6 the bottom border, 7 the
+'corner, 8 the client area, 0 none. A rolled-up window has a title bar only.
+FUNCTION WinPart (who, mx, my)
+WinPart = 0
 GetStats who, crap$, x, y, w, h, state
-IF mx >= x AND mx <= x + w AND my >= y AND my <= y + TtlHeight THEN CheckIfTitle = 1
-END FUNCTION
-
-FUNCTION CheckIfWinArea (who)
-mouse.getpos mx, my
-GetStats who, crap$, x, y, w, h, state
-
-IF state = 0 THEN
-CheckIfWinArea = 0
-ELSE
-IF mx >= x AND mx <= x + w AND my >= y AND my <= y + h THEN CheckIfWinArea = 1
-END IF
-
-END FUNCTION
-
-FUNCTION CheckIfWinBtn (who)
-mouse.getpos mx, my
-GetStats who, crap$, x, y, w, h, state
-
-FOR CW = 1 TO 3
-MinX = x + w - TtlHeight * CW
-MinY = y + 3
-MaxX = MinX + TtlHeight - 6
-MaxY = MinY + TtlHeight - 6
-IF mx >= MinX AND mx <= MaxX AND my >= MinY AND my <= MaxY THEN
-        CheckIfWinBtn = CW
-        EXIT FOR
-END IF
+IF mx < x OR mx > x + w OR my < y OR my > y + h THEN EXIT FUNCTION
+FOR b = 1 TO 3
+        bx = x + w - TtlHeight * b
+        IF mx >= bx AND mx <= bx + TtlHeight - 6 AND my >= y + 3 AND my <= y + TtlHeight - 3 THEN
+                WinPart = b
+                EXIT FUNCTION
+        END IF
 NEXT
-
+IF my <= y + TtlHeight THEN
+        WinPart = 4
+ELSEIF my >= y + h - 3 THEN
+        IF mx >= x + w - 3 THEN WinPart = 7 ELSE WinPart = 6
+ELSEIF mx >= x + w - 3 THEN
+        WinPart = 5
+ELSEIF state <> 0 THEN
+        WinPart = 8
+END IF
 END FUNCTION
 '@@HIT-END
 
 SUB cout (text$, sx, sy, colo, Lengh, break)
-DIM charlengh AS INTEGER
-
 'A known background and colour pair has ready-made glyphs.
 st = -1
 IF CoutBg >= 0 THEN
@@ -314,54 +191,35 @@ IF CoutBg >= 0 THEN
         NEXT
 END IF
 
-charlengh = (Lengh - (Lengh MOD 8)) / 8
+charlengh = Lengh \ 8
 RowChar = 0
 FOR Char = 1 TO LEN(text$)
         RowChar = RowChar + 1
         IF RowChar > charlengh THEN
-        IF break = 1 THEN sy = sy + 16: RowChar = 1 ELSE GOTO stopthis
+                IF break = 1 THEN sy = sy + 16: RowChar = 1 ELSE EXIT FOR
         END IF
-        num = ASC(MID$(text$, Char, 1))
-
-        gx = sx + (RowChar - 1) * 8
-        IF ClipActive THEN
-                vis = gx + 7 >= ClipLX1 AND gx <= ClipLX2 AND sy + 16 >= ClipLY1 AND sy + 1 <= ClipLY2
-        ELSE
-                vis = -1
-        END IF
-        IF vis THEN gGlyph gx, sy + 1, num, colo, st
+        Glyph sx + (RowChar - 1) * 8, sy + 1, ASC(MID$(text$, Char, 1)), colo, st
 NEXT
-stopthis:
 END SUB
 
-'Read the 8 x 16 glyph of every character from the screen font into runs. The
-'glyph is printed in colour 1 (one bit plane), read back with GET, and each row
-'of the plane is cut into runs of set pixels.
+'The 8 x 16 glyph of every character comes from QBasic's own screen font: the
+'character is printed in colour 1 (one bit plane) and read back with GET.
+'Characters 128 to 255 are kept as row bytes. Characters 32 to 127 become ready-
+'made glyphs for each text style, and style 1 (black on white) doubles as their
+'row bytes. Characters below 32 have no glyph.
 SUB CoutSetup
 COLOR 1
 Pal 1, 0, 0, 0
 
-GlyphTop = 0
-FOR a = 15 TO 255
+FOR a = 128 TO 255
         LOCATE 1, 1
-        PRINT CHR$(a)
-        GET (0, 0)-(7, 15), GlyphBuf
-        GlyphFirst(a) = GlyphTop
-        FOR r = 0 TO 15
-                m = GlyphBuf(2 + r * 2) AND &HFF
-                bit = 128
-                x0 = -1
-                FOR x = 0 TO 8
-                        IF (m AND bit) <> 0 THEN
-                                IF x0 < 0 THEN x0 = x
-                        ELSEIF x0 >= 0 THEN
-                                IF GlyphTop < 3600 THEN GlyphData(GlyphTop) = r * 64 + x0 * 8 + x - 1: GlyphTop = GlyphTop + 1
-                                x0 = -1
-                        END IF
-                        bit = bit \ 2
-                NEXT
+        PRINT CHR$(a);
+        GET (0, 0)-(7, 15), Scratch
+        FOR r = 0 TO 14 STEP 2
+                b0 = Scratch(2 + r * 2) AND &HFF
+                b1 = Scratch(4 + r * 2) AND &HFF
+                IF b1 > 127 THEN GlyphData((a - 128) * 8 + r \ 2) = b0 + (b1 - 256) * 256 ELSE GlyphData((a - 128) * 8 + r \ 2) = b0 + b1 * 256
         NEXT
-        GlyphRuns(a) = GlyphTop - GlyphFirst(a)
 NEXT
 
 'Ready-made glyphs: title text, text on the client area, text on a button.
@@ -369,10 +227,16 @@ SprFg(0) = 2: SprBg(0) = 6
 SprFg(1) = 0: SprBg(1) = 15
 SprFg(2) = 0: SprBg(2) = 3
 CoutBg = -1
-FOR st = 0 TO 2
-        FOR c = 32 TO 127
+FOR c = 32 TO 127
+        LOCATE 1, 1
+        PRINT CHR$(c);
+        GET (0, 0)-(7, 15), Scratch
+        FOR r = 0 TO 15
+                Mask(r) = Scratch(2 + r * 2) AND &HFF
+        NEXT
+        FOR st = 0 TO 2
                 gFill 0, 0, 7, 15, SprBg(st)
-                gGlyph 0, 0, c, SprFg(st), -1
+                GlyphRows 0, 0, SprFg(st)
                 spr = (st * 96 + c - 32) * 34
                 gGetSprite spr
         NEXT
@@ -387,9 +251,8 @@ OUT &H3C9, g
 OUT &H3C9, b
 END SUB
 
-SUB DrwBtn (x, y, w, h, up)
-IF up = 1 THEN Col1 = 1: Col2 = 3 ELSE Col2 = 1: Col1 = 3
-
+SUB DrwBtn (x, y, w, h)
+Col1 = 1: Col2 = 3
 gFill x + 1, y + 1, x + w - 1, y + h - 1, 2
 gPset x + w, y, 2
 gPset x, y + h, 2
@@ -524,14 +387,25 @@ mouse.show
 END SUB
 
 '@@DRAG-BEGIN
-SUB StartDrag (who)
+'Follow the pointer until the button goes up. what: 0 moves the window, 1 drags
+'the right border, 2 the bottom border, 3 the corner.
+SUB StartDrag (what, who)
 mouse.getpos ox, oy
-        x = ox: y = oy
-        GetStats who, crap$, wx, wy, ww, wh, wstate
+x = ox: y = oy
+GetStats who, crap$, wx, wy, ww, wh, wstate
 DO
         lx = x: ly = y
         mouse.getpos x, y
-        IF lx <> x OR ly <> y THEN WinMoveTo who, wx + (x - ox), wy + (y - oy)
+        IF lx <> x OR ly <> y THEN
+                IF what = 0 THEN
+                        WinMoveTo who, wx + (x - ox), wy + (y - oy)
+                ELSE
+                        nw = ww: nh = wh
+                        IF what <> 2 THEN nw = ww + (x - ox)
+                        IF what <> 1 THEN nh = wh + (y - oy)
+                        WinSizeTo who, nw, nh
+                END IF
+        END IF
 LOOP UNTIL mouse.getbutton <> LB
 END SUB
 
@@ -553,7 +427,7 @@ END SUB
 
 '@@DRAG-END
 
-SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
+SUB WinDrw (text$, x, y, w, h, state)
         IF NOT Outside(x, y, x + w, y + TtlHeight) THEN
                 WinDrwTtl x, y, x + w, y + TtlHeight
                 Lengh = w - TtlHeight * 3 - 2 - 5
@@ -564,9 +438,9 @@ SUB WinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
                 cout print$, x + 5, y, 2, Lengh + 8, 0
                 CoutBg = -1
 
-                DrwBtn x + w - TtlHeight * 3, y + 3, TtlHeight - 6, TtlHeight - 6, btnA
-                DrwBtn x + w - TtlHeight * 2, y + 3, TtlHeight - 6, TtlHeight - 6, btnB
-                DrwBtn x + w - TtlHeight * 1, y + 3, TtlHeight - 6, TtlHeight - 6, btnC
+                DrwBtn x + w - TtlHeight * 3, y + 3, TtlHeight - 6, TtlHeight - 6
+                DrwBtn x + w - TtlHeight * 2, y + 3, TtlHeight - 6, TtlHeight - 6
+                DrwBtn x + w - TtlHeight * 1, y + 3, TtlHeight - 6, TtlHeight - 6
 
                 MinButton x + w - TtlHeight * 3, y + 3
                 MaxButton x + w - TtlHeight * 2, y + 3
@@ -601,7 +475,7 @@ END SUB
 
 SUB WinDrwMng (who)
 GetStats who, text$, x, y, w, h, state
-WinDrw text$, x, y, w, h, state, 1, 1, 1
+WinDrw text$, x, y, w, h, state
 IF state <> 0 THEN CtlDrawAll who
 END SUB
 
@@ -663,18 +537,9 @@ WinRect who, nx1, ny1, nx2, ny2
 'The window in front shows all of itself, so its pixels can be copied. Only the
 'part that is on the screen before and after can be.
 IF WOrder(1) = who AND ClipActive = 0 THEN
-        sx1 = ox1
-        IF sx1 < 0 THEN sx1 = 0
-        IF sx1 + dx < 0 THEN sx1 = -dx
-        sx2 = ox2
-        IF sx2 > 639 THEN sx2 = 639
-        IF sx2 + dx > 639 THEN sx2 = 639 - dx
-        sy1 = oy1
-        IF sy1 < 0 THEN sy1 = 0
-        IF sy1 + dy < 0 THEN sy1 = -dy
-        sy2 = oy2
-        IF sy2 > 479 THEN sy2 = 479
-        IF sy2 + dy > 479 THEN sy2 = 479 - dy
+        sx1 = ox1: sx2 = ox2: sy1 = oy1: sy2 = oy2
+        BlitSpan sx1, sx2, dx, 639
+        BlitSpan sy1, sy2, dy, 479
         IF sx1 <= sx2 AND sy1 <= sy2 THEN
                 mouse.hide
                 WaitRetrace
@@ -686,6 +551,14 @@ IF WOrder(1) = who AND ClipActive = 0 THEN
         END IF
 END IF
 RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
+END SUB
+
+'Cut the span a1 to a2 so that it and the span moved by d are both inside 0 to last.
+SUB BlitSpan (a1, a2, d, last)
+IF a1 < 0 THEN a1 = 0
+IF a1 + d < 0 THEN a1 = -d
+IF a2 > last THEN a2 = last
+IF a2 + d > last THEN a2 = last - d
 END SUB
 
 'Resize a window and paint only what changed.
@@ -754,17 +627,7 @@ SUB RepaintChange (ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2)
 mouse.hide
 WaitRetrace
 RepaintRect ox1, oy1, ox2, oy2
-'new minus old: a band above, a band below, then left and right of the overlap
-IF nx2 < ox1 OR nx1 > ox2 OR ny2 < oy1 OR ny1 > oy2 THEN
-        RepaintRect nx1, ny1, nx2, ny2
-ELSE
-        IF ny1 < oy1 THEN RepaintRect nx1, ny1, nx2, oy1 - 1
-        IF ny2 > oy2 THEN RepaintRect nx1, oy2 + 1, nx2, ny2
-        top = ny1: IF oy1 > top THEN top = oy1
-        bot = ny2: IF oy2 < bot THEN bot = oy2
-        IF nx1 < ox1 THEN RepaintRect nx1, top, ox1 - 1, bot
-        IF nx2 > ox2 THEN RepaintRect ox2 + 1, top, nx2, bot
-END IF
+RepaintMinus nx1, ny1, nx2, ny2, ox1, oy1, ox2, oy2
 mouse.show
 END SUB
 
@@ -781,52 +644,48 @@ IF ry2 > 479 THEN ry2 = 479
 IF rx1 > rx2 OR ry1 > ry2 THEN EXIT SUB
 
 n = 1
-FreeRX1(1) = rx1: FreeRY1(1) = ry1: FreeRX2(1) = rx2: FreeRY2(1) = ry2
+c = 0
+RPut c, 1, rx1, ry1, rx2, ry2
 
 FOR Cyc = 1 TO WNumber
         IF n = 0 THEN EXIT FOR
         CW = WOrder(Cyc)
         WinRect CW, wx1, wy1, wx2, wy2
         m = 0
+        d = 1 - c
         FOR i = 1 TO n
-                ix1 = FreeRX1(i): IF wx1 > ix1 THEN ix1 = wx1
-                iy1 = FreeRY1(i): IF wy1 > iy1 THEN iy1 = wy1
-                ix2 = FreeRX2(i): IF wx2 < ix2 THEN ix2 = wx2
-                iy2 = FreeRY2(i): IF wy2 < iy2 THEN iy2 = wy2
+                fx1 = RL(c, i, 1): fy1 = RL(c, i, 2): fx2 = RL(c, i, 3): fy2 = RL(c, i, 4)
+                ix1 = fx1: IF wx1 > ix1 THEN ix1 = wx1
+                iy1 = fy1: IF wy1 > iy1 THEN iy1 = wy1
+                ix2 = fx2: IF wx2 < ix2 THEN ix2 = wx2
+                iy2 = fy2: IF wy2 < iy2 THEN iy2 = wy2
                 IF ix1 > ix2 OR iy1 > iy2 THEN
                         m = m + 1
-                        NextRX1(m) = FreeRX1(i): NextRY1(m) = FreeRY1(i): NextRX2(m) = FreeRX2(i): NextRY2(m) = FreeRY2(i)
+                        RPut d, m, fx1, fy1, fx2, fy2
                 ELSE
                         ClipOn ix1, iy1, ix2, iy2
                         WinDrwMng CW
                         ClipOff
-                        IF FreeRY1(i) < iy1 THEN
-                                m = m + 1
-                                NextRX1(m) = FreeRX1(i): NextRY1(m) = FreeRY1(i): NextRX2(m) = FreeRX2(i): NextRY2(m) = iy1 - 1
-                        END IF
-                        IF iy2 < FreeRY2(i) THEN
-                                m = m + 1
-                                NextRX1(m) = FreeRX1(i): NextRY1(m) = iy2 + 1: NextRX2(m) = FreeRX2(i): NextRY2(m) = FreeRY2(i)
-                        END IF
-                        IF FreeRX1(i) < ix1 THEN
-                                m = m + 1
-                                NextRX1(m) = FreeRX1(i): NextRY1(m) = iy1: NextRX2(m) = ix1 - 1: NextRY2(m) = iy2
-                        END IF
-                        IF ix2 < FreeRX2(i) THEN
-                                m = m + 1
-                                NextRX1(m) = ix2 + 1: NextRY1(m) = iy1: NextRX2(m) = FreeRX2(i): NextRY2(m) = iy2
-                        END IF
+                        IF fy1 < iy1 THEN m = m + 1: RPut d, m, fx1, fy1, fx2, iy1 - 1
+                        IF iy2 < fy2 THEN m = m + 1: RPut d, m, fx1, iy2 + 1, fx2, fy2
+                        IF fx1 < ix1 THEN m = m + 1: RPut d, m, fx1, iy1, ix1 - 1, iy2
+                        IF ix2 < fx2 THEN m = m + 1: RPut d, m, ix2 + 1, iy1, fx2, iy2
                 END IF
         NEXT
         n = m
-        FOR i = 1 TO n
-                FreeRX1(i) = NextRX1(i): FreeRY1(i) = NextRY1(i): FreeRX2(i) = NextRX2(i): FreeRY2(i) = NextRY2(i)
-        NEXT
+        c = d
 NEXT
 
 FOR i = 1 TO n
-        gFill FreeRX1(i), FreeRY1(i), FreeRX2(i), FreeRY2(i), 4
+        gFill RL(c, i, 1), RL(c, i, 2), RL(c, i, 3), RL(c, i, 4), 4
 NEXT
+END SUB
+
+SUB RPut (l, i, x1, y1, x2, y2)
+RL(l, i, 1) = x1
+RL(l, i, 2) = y1
+RL(l, i, 3) = x2
+RL(l, i, 4) = y2
 END SUB
 
 'Clip all drawing to a screen rectangle. VIEW SCREEN raises error 5 when the
@@ -846,13 +705,13 @@ END IF
 IF px1 <> x1 OR px2 <> x2 THEN
         IF px1 <> x1 THEN ClipColX = px1 ELSE ClipColX = px2
         ClipColY = py1
-        GET (ClipColX, py1)-(ClipColX, py2), ClipColBuf
+        GET (ClipColX, py1)-(ClipColX, py2), Scratch
         ClipCol = 1
 END IF
 IF py1 <> y1 OR py2 <> y2 THEN
         IF py1 <> y1 THEN ClipRowY = py1 ELSE ClipRowY = py2
         ClipRowX = x1
-        GET (x1, ClipRowY)-(x2, ClipRowY), ClipRowBuf
+        GET (x1, ClipRowY)-(x2, ClipRowY), Scratch(1000)
         ClipRow = 1
 END IF
 ClipLX1 = px1: ClipLY1 = py1: ClipLX2 = px2: ClipLY2 = py2
@@ -863,8 +722,8 @@ END SUB
 SUB ClipOff
 ClipActive = 0
 gViewOff
-IF ClipCol THEN PUT (ClipColX, ClipColY), ClipColBuf, PSET
-IF ClipRow THEN PUT (ClipRowX, ClipRowY), ClipRowBuf, PSET
+IF ClipCol THEN PUT (ClipColX, ClipColY), Scratch, PSET
+IF ClipRow THEN PUT (ClipRowX, ClipRowY), Scratch(1000), PSET
 ClipCol = 0
 ClipRow = 0
 END SUB
@@ -944,6 +803,54 @@ IF yl > yh THEN yl = y2: yh = y1
 Outside = (xh < l OR xl > r OR yh < t OR yl > b)
 END FUNCTION
 
+'Draw the glyph in Mask as runs of set pixels, from the top left corner gx, gy.
+SUB GlyphRows (gx, gy, colo)
+FOR r = 0 TO 15
+        m = Mask(r)
+        bit = 128
+        x0 = -1
+        FOR x = 0 TO 8
+                IF (m AND bit) <> 0 THEN
+                        IF x0 < 0 THEN x0 = x
+                ELSEIF x0 >= 0 THEN
+                        gLine gx + x0, gy + r, gx + x - 1, gy + r, colo
+                        x0 = -1
+                END IF
+                bit = bit \ 2
+        NEXT
+NEXT
+END SUB
+
+'One character at gx, gy. A glyph that is inside the clip and has a ready-made
+'sprite for the style st is one PUT. At the edge of the clip, or without a style,
+'it goes out as runs, which LINE clips.
+SUB Glyph (gx, gy, num, colo, st)
+IF ClipActive THEN
+        IF gx + 7 < ClipLX1 OR gx > ClipLX2 OR gy + 15 < ClipLY1 OR gy > ClipLY2 THEN EXIT SUB
+        whole = gx >= ClipLX1 AND gx + 7 <= ClipLX2 AND gy >= ClipLY1 AND gy + 15 <= ClipLY2
+ELSE
+        whole = gx >= 0 AND gx + 7 <= 639 AND gy >= 0 AND gy + 15 <= 479
+END IF
+IF num < 32 THEN EXIT SUB
+IF st >= 0 AND whole AND num < 128 THEN
+        spr = (st * 96 + num - 32) * 34
+        gPutSpr gx, gy, spr
+        EXIT SUB
+END IF
+IF num < 128 THEN
+        gb = (96 + num - 32) * 34 + 2
+        FOR r = 0 TO 15
+                Mask(r) = (NOT SprData(gb + r * 2)) AND &HFF
+        NEXT
+ELSE
+        FOR r = 0 TO 15
+                v = GlyphData((num - 128) * 8 + r \ 2)
+                IF r AND 1 THEN Mask(r) = ((v AND &HFF00) \ 256) AND &HFF ELSE Mask(r) = v AND &HFF
+        NEXT
+END IF
+GlyphRows gx, gy, colo
+END SUB
+
 '@@GFX-BEGIN
 'The only place that draws. The tests replace this block with a counting version.
 SUB gView (x1, y1, x2, y2)
@@ -979,50 +886,20 @@ IF Outside(x - r, y - r, x + r, y + r) THEN EXIT SUB
 CIRCLE (x, y), r, c
 END SUB
 
-'One glyph: its runs of set pixels, from the top row gy. Inside the clip the
-'runs go straight to LINE; at the edge each is tested first.
-SUB gGlyph (gx, gy, num, colo, st)
-IF st >= 0 AND num >= 32 AND num <= 127 THEN
-        IF ClipActive THEN
-                inside = gx >= ClipLX1 AND gx + 7 <= ClipLX2 AND gy >= ClipLY1 AND gy + 15 <= ClipLY2
-        ELSE
-                inside = gx >= 0 AND gx + 7 <= 639 AND gy >= 0 AND gy + 15 <= 479
-        END IF
-        IF inside THEN
-                PUT (gx, gy), SprData((st * 96 + num - 32) * 34), PSET
-                EXIT SUB
-        END IF
-END IF
-k = GlyphFirst(num)
-IF ClipActive THEN
-        inside = gx >= ClipLX1 AND gx + 7 <= ClipLX2 AND gy >= ClipLY1 AND gy + 15 <= ClipLY2
-ELSE
-        inside = gx >= 0 AND gx + 7 <= 639 AND gy >= 0 AND gy + 15 <= 479
-END IF
-FOR n = 1 TO GlyphRuns(num)
-        v = GlyphData(k)
-        k = k + 1
-        ry = gy + v \ 64
-        x0 = gx + ((v \ 8) AND 7)
-        x1 = gx + (v AND 7)
-        IF inside THEN
-                LINE (x0, ry)-(x1, ry), colo
-        ELSEIF NOT Outside(x0, ry, x1, ry) THEN
-                LINE (x0, ry)-(x1, ry), colo
-        END IF
-NEXT
-END SUB
-
 SUB gGetSprite (so)
 GET (0, 0)-(7, 15), SprData(so)
 END SUB
 
+SUB gPutSpr (x, y, so)
+PUT (x, y), SprData(so), PSET
+END SUB
+
 SUB gGet (x1, y1, x2, y2)
-GET (x1, y1)-(x2, y2), BlitBuf
+GET (x1, y1)-(x2, y2), Scratch
 END SUB
 
 SUB gPut (x, y)
-PUT (x, y), BlitBuf, PSET
+PUT (x, y), Scratch, PSET
 END SUB
 '@@GFX-END
 
@@ -1086,10 +963,10 @@ CtlRect id, x1, y1, x2, y2
 w = Ctl(id).w
 h = Ctl(id).h
 cap$ = RTRIM$(Ctl(id).cap)
+ty = y1 + (h - 16) \ 2 - 1
 SELECT CASE Ctl(id).kind
 CASE CtlLabel
-        CoutBg = 15
-        cout cap$, x1, y1 + (h - 16) \ 2 - 1, 0, w, 0
+        CtlCap cap$, x1, ty, w, 15
 CASE CtlButton
         nudge = 0
         IF CtlDown = id THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
@@ -1099,9 +976,7 @@ CASE CtlButton
         gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
         gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
         gBox x1, y1, x2, y2, 1
-        tw = LEN(cap$) * 8
-        CoutBg = 3
-        cout cap$, x1 + (w - tw) \ 2 + nudge, y1 + (h - 16) \ 2 - 1 + nudge, 0, w, 0
+        CtlCap cap$, x1 + (w - LEN(cap$) * 8) \ 2 + nudge, ty + nudge, w, 3
 CASE CtlCheck
         bx = y1 + (h - 13) \ 2
         gBox x1, bx, x1 + 12, bx + 12, 1
@@ -1112,16 +987,14 @@ CASE CtlCheck
                 gLine x1 + 9, bx + 3, x1 + 3, bx + 9, 0
                 gLine x1 + 9, bx + 4, x1 + 4, bx + 9, 0
         END IF
-        CoutBg = 15
-        cout cap$, x1 + 20, y1 + (h - 16) \ 2 - 1, 0, w - 20, 0
+        CtlCap cap$, x1 + 20, ty, w - 20, 15
 CASE CtlRadio
         cx = x1 + 6
         cy = y1 + h \ 2
         gFill cx - 6, cy - 6, cx + 6, cy + 6, 15
         gCircle cx, cy, 6, 1
         IF Ctl(id).chk THEN gFill cx - 2, cy - 2, cx + 2, cy + 2, 0
-        CoutBg = 15
-        cout cap$, x1 + 20, y1 + (h - 16) \ 2 - 1, 0, w - 20, 0
+        CtlCap cap$, x1 + 20, ty, w - 20, 15
 CASE CtlText
         IF CtlFocus = id THEN bc = 7 ELSE bc = 1
         gBox x1, y1, x2, y2, bc
@@ -1129,13 +1002,18 @@ CASE CtlText
         n = (w - 8) \ 8
         shown$ = cap$
         IF LEN(shown$) > n THEN shown$ = RIGHT$(shown$, n)
-        CoutBg = 15
-        cout shown$, x1 + 4, y1 + (h - 16) \ 2 - 1, 0, w - 8, 0
+        CtlCap shown$, x1 + 4, ty, w - 8, 15
         IF CtlFocus = id THEN
                 cx = x1 + 4 + LEN(shown$) * 8
                 gLine cx, y1 + 3, cx, y2 - 3, 0
         END IF
 END SELECT
+END SUB
+
+'Control text in black on the background bg.
+SUB CtlCap (t$, x, y, w, bg)
+CoutBg = bg
+cout t$, x, y, 0, w, 0
 CoutBg = -1
 END SUB
 

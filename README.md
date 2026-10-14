@@ -112,7 +112,7 @@ The cases run as three programs (window, controls, speed), and the test build
 leaves out the mouse library, the hit tests, the drag loops and the palette
 setup, to keep the test build inside QBasic's memory (code and arrays share
 about 160 KB). `scripts/test.sh` prints the memory left after the first paint,
-about 75 KB, and fails below 25 KB. A program stops starting at about 20 KB.
+about 86 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 ## Layout
 
