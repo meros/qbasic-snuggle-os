@@ -72,6 +72,25 @@ A drag of the front window writes each changed pixel once (1.00 writes per
 changed pixel; the 1999 code wrote 2.9 to 3.7). A window that is not in front
 is repainted through the clip: 1.2 writes per pixel.
 
+## Apps and the heap
+
+The desktop starts one app, Hello (`HelloStart` in the `'@@APP` block of
+`SNUGGLE.BAS`). An app is a set of procedures with a number. It is added by hand
+for now: a case in `AppStartAll` and one in `AppEvent`.
+
+| Procedure | What |
+| --- | --- |
+| `AppWindow(app, title$, x, y, w, h, words)` | Window for the app plus a data block of `words` words. Returns the window number, 0 when there is no free slot. |
+| `AppGet(win, i)`, `AppSet win, i, v` | Word i of the window's data block (control numbers, state). An index outside the block is refused. |
+| `AppEvent win, ctl` | Called by the kernel when a control of the window was clicked or accepted. |
+| `WinClose win` | Closes the window: its controls die, its heap blocks are freed and the heap is compacted, the area is repainted. The close button calls it. |
+
+The heap is one 4 KB array. Blocks are packed from word 0 without gaps and are
+used through handles, so a free can slide the blocks above it down at once:
+`MemAlloc(owner, words)`, `MemFree h`, `MemFreeAll owner`, `MemGet(h, i)`,
+`MemSet h, i, v`. A window owns the blocks made for it, and closing the window
+frees them.
+
 ## Controls
 
 A window can hold labels, buttons, checkboxes, radio buttons and text boxes.

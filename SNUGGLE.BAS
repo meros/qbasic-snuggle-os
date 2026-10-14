@@ -32,8 +32,9 @@ DIM SHARED Mask(15) AS INTEGER          'the 16 row bytes of the glyph being dra
 
 DIM SHARED WNMax AS INTEGER
 WNMax = 10
-DIM SHARED WNumber AS INTEGER
-DIM SHARED WGData(WNMax, 6) AS INTEGER
+DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
+DIM SHARED WGData(WNMax, 7) AS INTEGER  '1 to 4 x, y, w, h; 5 state; 6 owner app; 7 heap handle of its data; 0 in use
+DIM SHARED WNew AS INTEGER              'the slot NewWin gave the window it made last
 DIM SHARED WTData(WNMax) AS STRING
 DIM SHARED WOrder(WNMax) AS INTEGER
 DIM SHARED RL(1, 64, 4) AS INTEGER  'Repaint work lists of rectangles (x1, y1, x2, y2): the ones still to
@@ -65,6 +66,13 @@ DIM SHARED Scratch(4100) AS INTEGER     'GET and PUT buffer: BlitMove uses all o
 DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
 DIM SHARED MouseOK AS INTEGER
 DIM SHARED MouseVis AS INTEGER
+CONST HeapWords = 2047                  'the heap of the apps: 4 KB
+CONST HeapMax = 31                      'blocks at most
+DIM SHARED Heap(HeapWords) AS INTEGER
+DIM SHARED HBase(HeapMax) AS INTEGER    'first word of a block
+DIM SHARED HSize(HeapMax) AS INTEGER    'words in a block, 0 for a free handle
+DIM SHARED HOwner(HeapMax) AS INTEGER   'window the block belongs to
+DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
 
 
 DEFINT A-Z
@@ -75,21 +83,7 @@ mouse.show
 Init
 CLS
 
-NewWin "Alfa", 90, 90, 300, 70
-NewWin "Beta", 100, 100, 300, 70
-NewWin "Welcome to the future", 120, 120, 300, 100
-NewWin "Controls", 330, 40, 290, 230
-cw0 = WNumber
-cName = CtlAdd(cw0, CtlText, 70, 4, 200, 22, "snuggle")
-cLabel = CtlAdd(cw0, CtlLabel, 8, 6, 60, 16, "Name:")
-cSound = CtlAdd(cw0, CtlCheck, 8, 38, 170, 16, "Enable sound")
-cRed = CtlAdd(cw0, CtlRadio, 8, 64, 100, 16, "Red")
-cGreen = CtlAdd(cw0, CtlRadio, 8, 84, 100, 16, "Green")
-cBlue = CtlAdd(cw0, CtlRadio, 8, 104, 100, 16, "Blue")
-cOk = CtlAdd(cw0, CtlButton, 8, 140, 80, 26, "OK")
-cClear = CtlAdd(cw0, CtlButton, 100, 140, 80, 26, "Clear")
-cStatus = CtlAdd(cw0, CtlLabel, 8, 178, 262, 16, "Ready")
-CtlSetChecked cRed, 1
+AppStartAll
 refresh
 
 DO
@@ -108,6 +102,8 @@ CASE 1 TO 3
         WinPutTop CW
         mouse.getpos cmx, cmy
         SELECT CASE WinPart(CW, cmx, cmy)
+        CASE 1
+                WinClose CW
         CASE 2
                 IF WGData(CW, 5) <> 2 THEN WinSetState CW, 2 ELSE WinSetState CW, 1
         CASE 3
@@ -142,18 +138,91 @@ IF CtlFocus <> 0 THEN
         k$ = ""
 END IF
 IF CtlEvent <> 0 THEN
-        SELECT CASE CtlEvent
-        CASE cOk
-                CtlSetText cStatus, "Hello, " + CtlGetText$(cName)
-        CASE cClear
-                CtlSetText cName, ""
-                CtlSetText cStatus, "Ready"
-        END SELECT
+        AppEvent Ctl(CtlEvent).win, CtlEvent
         CtlEvent = 0
 END IF
 IF UCASE$(k$) = "R" THEN refresh
 LOOP UNTIL UCASE$(k$) = "Q"
 '@@RUN-END
+
+'---------------------------------------------------------------------------
+'Applications. An app is a set of procedures with its own number. The kernel
+'starts every app once (AppStartAll) and hands a control event to the app that
+'owns the window of the control (AppEvent). An app makes its windows with
+'AppWindow, fills them with controls (CtlAdd) and changes them with the Ctl
+'procedures; the kernel does the painting, the clipping and the mouse.
+'Apps are added here by hand for now: a number, a start and an event procedure.
+'---------------------------------------------------------------------------
+'@@APP-BEGIN
+'Make a window for app, with a data block of words words that the kernel frees
+'when the window closes. Returns the window number. Control numbers and other
+'state of an instance go in its block (AppGet, AppSet), so one app can run in
+'several windows.
+FUNCTION AppWindow (app, title$, x, y, w, h, words)
+NewWin title$, x, y, w, h
+AppWindow = 0
+IF WNew = 0 THEN EXIT FUNCTION
+WGData(WNew, 6) = app
+WGData(WNew, 7) = MemAlloc(WNew, words)
+AppWindow = WNew
+END FUNCTION
+
+FUNCTION AppGet (win, i)
+AppGet = MemGet(WGData(win, 7), i)
+END FUNCTION
+
+SUB AppSet (win, i, v)
+MemSet WGData(win, 7), i, v
+END SUB
+
+SUB AppStartAll
+HelloStart
+END SUB
+
+'A control of window win was clicked or accepted.
+SUB AppEvent (win, ctl)
+SELECT CASE WGData(win, 6)
+CASE 1
+        HelloEvent win, ctl
+END SELECT
+END SUB
+
+'App 1, Hello: a window with a name box, a check box, three radio buttons and
+'two buttons. OK greets the name, Clear empties it. Data words: the control
+'numbers.
+CONST HelloWho = 0, HelloSnd = 1, HelloRed = 2, HelloBlue = 3, HelloOk = 4, HelloWipe = 5, HelloMsg = 6
+
+SUB HelloStart
+w = AppWindow(1, "Hello", 170, 100, 300, 240, 7)
+AppSet w, HelloWho, CtlAdd(w, CtlText, 70, 4, 200, 22, "snuggle")
+dummy = CtlAdd(w, CtlLabel, 8, 6, 60, 16, "Name:")
+AppSet w, HelloSnd, CtlAdd(w, CtlCheck, 8, 38, 170, 16, "Enable sound")
+r = CtlAdd(w, CtlRadio, 8, 64, 100, 16, "Red")
+AppSet w, HelloRed, r
+CtlSetChecked r, 1
+dummy = CtlAdd(w, CtlRadio, 8, 84, 100, 16, "Green")
+AppSet w, HelloBlue, CtlAdd(w, CtlRadio, 8, 104, 100, 16, "Blue")
+AppSet w, HelloOk, CtlAdd(w, CtlButton, 8, 140, 80, 26, "OK")
+AppSet w, HelloWipe, CtlAdd(w, CtlButton, 100, 140, 80, 26, "Clear")
+AppSet w, HelloMsg, CtlAdd(w, CtlLabel, 8, 178, 262, 16, "Ready")
+END SUB
+
+SUB HelloEvent (w, ctl)
+msg = AppGet(w, HelloMsg)
+SELECT CASE ctl
+CASE AppGet(w, HelloOk)
+        CtlSetText msg, "Hello, " + CtlGetText$(AppGet(w, HelloWho))
+CASE AppGet(w, HelloWipe)
+        CtlSetText AppGet(w, HelloWho), ""
+        CtlSetText msg, "Ready"
+CASE AppGet(w, HelloSnd)
+        IF CtlGetChecked(ctl) THEN s$ = "Sound on" ELSE s$ = "Sound off"
+        CtlSetText msg, s$
+CASE AppGet(w, HelloRed) TO AppGet(w, HelloBlue)
+        CtlSetText msg, "Colour: " + CtlGetText$(ctl)
+END SELECT
+END SUB
+'@@APP-END
 
 '@@HIT-BEGIN
 'What is at a screen point in a window: 1 to 3 the title bar buttons (1 is the
@@ -358,17 +427,120 @@ END IF
 END SUB
 '@@MOUSE-END
 
+'Make a window in the first free slot and put it in front. The slot is WNew, 0
+'when there is none.
 SUB NewWin (text$, x, y, w, h)
+WNew = 0
+s = 1
+DO WHILE s <= WNMax
+        IF WGData(s, 0) = 0 THEN EXIT DO
+        s = s + 1
+LOOP
+IF s > WNMax THEN EXIT SUB
+WNew = s
 WNumber = WNumber + 1
-WGData(WNumber, 1) = x
-WGData(WNumber, 2) = y
-WGData(WNumber, 3) = w
-WGData(WNumber, 4) = h
-WGData(WNumber, 5) = 1
-WGData(WNumber, 0) = 0
-WTData(WNumber) = text$
-WOrder(WNumber) = WNumber
-WinMakeHighest WNumber
+WGData(s, 0) = 1
+WGData(s, 1) = x
+WGData(s, 2) = y
+WGData(s, 3) = w
+WGData(s, 4) = h
+WGData(s, 5) = 1
+WGData(s, 6) = 0
+WGData(s, 7) = 0
+WTData(s) = text$
+WOrder(WNumber) = s
+WinMakeHighest s
+END SUB
+
+'Close a window: it leaves the order, its controls die, the heap blocks it owns
+'are freed and compacted, and the area it covered is repainted.
+SUB WinClose (who)
+WinRect who, x1, y1, x2, y2
+FOR i = 1 TO WNumber
+        IF WOrder(i) = who THEN p = i
+NEXT
+FOR i = p TO WNumber - 1
+        WOrder(i) = WOrder(i + 1)
+NEXT
+WNumber = WNumber - 1
+WGData(who, 0) = 0
+MemFreeAll who
+FOR i = 1 TO CtlCount
+        IF Ctl(i).win = who THEN Ctl(i).win = 0
+NEXT
+IF CtlFocus > 0 THEN IF Ctl(CtlFocus).win = 0 THEN CtlFocus = 0
+mouse.hide
+WaitRetrace
+RepaintRect x1, y1, x2, y2
+mouse.show
+END SUB
+
+'All windows and heap blocks gone.
+SUB WinReset
+WNumber = 0
+FOR s = 0 TO WNMax
+        WGData(s, 0) = 0
+NEXT
+FOR h = 1 TO HeapMax
+        HSize(h) = 0
+NEXT
+HeapTop = 0
+CtlReset
+END SUB
+
+'---------------------------------------------------------------------------
+'The heap. One array, blocks packed from word 0 with no gaps. A block is used
+'through its handle (1 to HeapMax), so the heap can move it: a free slides every
+'block above it down. There is no separate collection pass.
+'---------------------------------------------------------------------------
+'A block of n words, zeroed, owned by a window. Returns its handle, 0 when full.
+FUNCTION MemAlloc (owner, n)
+MemAlloc = 0
+IF n < 1 OR HeapTop + n > HeapWords + 1 THEN EXIT FUNCTION
+FOR h = 1 TO HeapMax
+        IF HSize(h) = 0 THEN
+                HBase(h) = HeapTop
+                HSize(h) = n
+                HOwner(h) = owner
+                FOR i = HeapTop TO HeapTop + n - 1
+                        Heap(i) = 0
+                NEXT
+                HeapTop = HeapTop + n
+                MemAlloc = h
+                EXIT FUNCTION
+        END IF
+NEXT
+END FUNCTION
+
+SUB MemFree (h)
+n = HSize(h)
+IF n = 0 THEN EXIT SUB
+b = HBase(h)
+FOR i = b TO HeapTop - n - 1
+        Heap(i) = Heap(i + n)
+NEXT
+FOR k = 1 TO HeapMax
+        IF HSize(k) > 0 AND HBase(k) > b THEN HBase(k) = HBase(k) - n
+NEXT
+HeapTop = HeapTop - n
+HSize(h) = 0
+END SUB
+
+'Free every block a window owns (what closing an instance does).
+SUB MemFreeAll (owner)
+FOR h = 1 TO HeapMax
+        IF HSize(h) > 0 AND HOwner(h) = owner THEN MemFree h
+NEXT
+END SUB
+
+'Word i of a block. An index outside the block reads 0 and writes nothing.
+FUNCTION MemGet (h, i)
+MemGet = 0
+IF h >= 1 AND h <= HeapMax THEN IF i >= 0 AND i < HSize(h) THEN MemGet = Heap(HBase(h) + i)
+END FUNCTION
+
+SUB MemSet (h, i, v)
+IF h >= 1 AND h <= HeapMax THEN IF i >= 0 AND i < HSize(h) THEN Heap(HBase(h) + i) = v
 END SUB
 
 SUB QuitButton (x, y)
@@ -914,21 +1086,24 @@ END SUB
 'Add a control and return its number (0 when the table is full).
 'x, y, w, h are relative to the top left of the client area.
 FUNCTION CtlAdd (win, kind, x, y, w, h, cap$)
-IF CtlCount >= CtlMax THEN
-        CtlAdd = 0
-        EXIT FUNCTION
-END IF
-CtlCount = CtlCount + 1
-Ctl(CtlCount).kind = kind
-Ctl(CtlCount).win = win
-Ctl(CtlCount).x = x
-Ctl(CtlCount).y = y
-Ctl(CtlCount).w = w
-Ctl(CtlCount).h = h
-Ctl(CtlCount).chk = 0
-Ctl(CtlCount).grp = 1
-Ctl(CtlCount).cap = cap$
-CtlAdd = CtlCount
+id = 1
+DO WHILE id <= CtlCount
+        IF Ctl(id).win = 0 THEN EXIT DO
+        id = id + 1
+LOOP
+CtlAdd = 0
+IF id > CtlMax THEN EXIT FUNCTION
+IF id > CtlCount THEN CtlCount = id
+Ctl(id).kind = kind
+Ctl(id).win = win
+Ctl(id).x = x
+Ctl(id).y = y
+Ctl(id).w = w
+Ctl(id).h = h
+Ctl(id).chk = 0
+Ctl(id).grp = 1
+Ctl(id).cap = cap$
+CtlAdd = id
 END FUNCTION
 
 'Remove all controls.

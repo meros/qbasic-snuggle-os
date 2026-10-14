@@ -55,8 +55,7 @@ END FUNCTION
 
 'Window sets used by the cases. Index 1 is the back window, the last is the front.
 SUB Scene (n)
-WNumber = 0
-CtlReset
+WinReset
 SELECT CASE n
 CASE 1
         NewWin "Alfa", 90, 90, 300, 70
@@ -228,4 +227,53 @@ SUB ThinCase (lbl$, x1, y1, x2, y2)
 gFill x1, y1, x2, y2, 9
 RepaintRect x1, y1, x2, y2
 CompareToLegacy lbl$
+END SUB
+
+'The heap keeps blocks intact when others are freed, compacts without gaps,
+'refuses what does not fit, and gives back everything a closed window owned.
+SUB HeapCase
+WinReset
+a = MemAlloc(1, 10)
+b = MemAlloc(2, 20)
+c = MemAlloc(1, 5)
+FOR i = 0 TO 9: MemSet a, i, 100 + i: NEXT
+FOR i = 0 TO 19: MemSet b, i, 200 + i: NEXT
+FOR i = 0 TO 4: MemSet c, i, 300 + i: NEXT
+Check "heap: three blocks fill 35 words", HeapTop = 35, STR$(HeapTop)
+MemFree a
+ok = (HeapTop = 25 AND HBase(b) = 0 AND HBase(c) = 20)
+FOR i = 0 TO 19
+        IF MemGet(b, i) <> 200 + i THEN ok = 0
+NEXT
+FOR i = 0 TO 4
+        IF MemGet(c, i) <> 300 + i THEN ok = 0
+NEXT
+Check "heap: a free slides the blocks above it down and keeps their data", ok, STR$(HeapTop)
+Check "heap: a freed handle reads 0", MemGet(a, 0) = 0, ""
+MemSet b, 20, 7
+MemSet b, -1, 7
+Check "heap: an index outside the block is refused", MemGet(b, 20) = 0 AND MemGet(c, 0) = 300, ""
+Check "heap: a block that does not fit is refused", MemAlloc(3, 5000) = 0, ""
+MemFreeAll 1
+Check "heap: freeing an owner frees all its blocks", HeapTop = 20 AND HSize(c) = 0 AND MemGet(b, 19) = 219, STR$(HeapTop)
+d = MemAlloc(4, HeapWords + 1 - 20)
+Check "heap: a block can fill the heap to the last word", d > 0 AND MemAlloc(4, 1) = 0, STR$(d)
+MemFreeAll 4
+
+'A window made by an app owns a data block; closing it frees block and controls.
+Scene 4
+w = AppWindow(9, "Data", 400, 300, 100, 60, 8)
+used = HeapTop
+AppSet w, 3, 77
+Check "app window: its data block holds a value", AppGet(w, 3) = 77 AND used = 8, STR$(used)
+x = CtlAdd(w, CtlButton, 4, 4, 60, 22, "X")
+RepaintRect 0, 0, 639, 479
+WinClose w
+Check "close: the heap block is freed", HeapTop = 0, STR$(HeapTop)
+Check "close: the window left the order", WNumber = 2, STR$(WNumber)
+Check "close: its control is dead and its number is reused", CtlAdd(1, CtlLabel, 0, 0, 10, 10, "") = x, ""
+CompareToLegacy "close: the area of a closed window is repainted"
+WinClose 1
+CompareToLegacy "close: a window with controls closes"
+Check "close: its controls take no click", CtlAt(150, 66) = 0, STR$(CtlAt(150, 66))
 END SUB
