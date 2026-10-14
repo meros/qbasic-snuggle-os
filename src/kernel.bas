@@ -598,6 +598,22 @@ CASE 2
 END SELECT
 END FUNCTION
 
+'A filled rectangle in a colour, x and y relative to the client area. It is
+'cut to the client area, so a game can let things slide in and out (drawing only).
+'@api Immediate mode | A filled rectangle in colour `c`, relative to the client area and cut to it.
+SUB UiFill (x, y, w, h, c)
+IF UiMode <> 0 THEN EXIT SUB
+x1 = UiOx + x
+y1 = UiOy + y
+x2 = x1 + w - 1
+y2 = y1 + h - 1
+IF x1 < UiOx THEN x1 = UiOx
+IF y1 < UiOy THEN y1 = UiOy
+IF x2 > UiRight THEN x2 = UiRight
+IF y2 > UiBottom THEN y2 = UiBottom
+IF x1 <= x2 AND y1 <= y2 THEN gFill x1, y1, x2, y2, c
+END SUB
+
 'Text in black on the client background (drawing only).
 '@api Immediate mode | Text in black on the client area, `h` high.
 SUB UiLabel (x, y, w, h, t$)

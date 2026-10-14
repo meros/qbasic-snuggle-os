@@ -7,7 +7,7 @@ IconCount = 0
 AppStartAll
 RepaintRect 0, 0, 639, 479
 hello = WOrder(1)
-Check "input: the desktop starts one Hello window and four icons", WNumber = 1 AND HGet(hello, WfApp) = AppIdHello AND IconCount = 4, STR$(WNumber) + STR$(IconCount)
+Check "input: the desktop starts one Hello window and five icons", WNumber = 1 AND HGet(hello, WfApp) = AppIdHello AND IconCount = 5, STR$(WNumber) + STR$(IconCount)
 CompareToLegacy "input: the desktop at start"
 
 'An icon starts an instance; windows cascade.

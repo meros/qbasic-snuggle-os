@@ -57,6 +57,7 @@ shows a notice, so an app need not check each call.
 | Procedure | What |
 | --- | --- |
 | `UiButton (id, x, y, w, h, cap$)` | A push button (`id` 1 or more, x and y relative to the client area). Returns -1 when it was clicked (only in the click pass), so the app does its work in the IF. |
+| `UiFill (x, y, w, h, c)` | A filled rectangle in colour `c`, relative to the client area and cut to it. |
 | `UiLabel (x, y, w, h, t$)` | Text in black on the client area, `h` high. |
 
 ## Timers

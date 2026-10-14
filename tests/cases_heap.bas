@@ -5,6 +5,7 @@ OomCase
 TimerCase
 ClockCase
 CalcCase
+FlappyCase
 END SUB
 
 SUB HeapCase
@@ -230,6 +231,64 @@ Check "calc: an operator after = goes on with the result", CalcKeys$(w, "C4*5=+1
 Check "calc: a number too long to show is an error", CalcKeys$(w, "C9999999999*9999999999=") = "Error", CalcKeys$(w, "")
 dummy$ = CalcKeys$(w, "C2*8")
 CompareToLegacy "calc: the window after some keys"
+WinClose w
+NoSync = 0
+END SUB
+
+'The game: physics, pipes, score, a crash and a restart, then its window.
+SUB FlappyCase
+NoSync = -1
+Scene 1
+RepaintRect 0, 0, 639, 479
+AppLaunch AppIdFlappy
+w = WNew
+Check "flappy: a launch makes a window, ready to start", HKind(w) = KWin AND AppGet(w, FlState) = 0, STR$(AppGet(w, FlState))
+FlappyKey w, "x"
+Check "flappy: other keys do nothing", AppGet(w, FlState) = 0, ""
+FlappyKey w, " "
+Check "flappy: space starts the round with a flap", AppGet(w, FlState) = 1 AND AppGet(w, FlVy) = -14, STR$(AppGet(w, FlState))
+y0 = AppGet(w, FlY)
+FlappyTimer w, 1
+Check "flappy: a tick moves the bird by its speed and pulls it down", AppGet(w, FlY) = y0 - 13 AND AppGet(w, FlVy) = -13, STR$(AppGet(w, FlY) - y0)
+p0 = AppGet(w, FlPx)
+FlappyTimer w, 1
+Check "flappy: the pipes move 3 pixels a tick", AppGet(w, FlPx) = p0 - 3, STR$(AppGet(w, FlPx) - p0)
+armed = 0
+FOR i = 1 TO TimerMax
+        IF TmUsed(i) AND TmApp(i) = AppIdFlappy AND TmWin(i) = w THEN armed = armed + 1
+NEXT
+Check "flappy: the next tick is armed", armed = 1, STR$(armed)
+'A pipe the bird has just passed counts once: the gap is around the bird.
+AppSet w, FlGap, 100
+AppSet w, FlPx, FlBirdX - FlPipeW + 1
+AppSet w, FlY, 135 * 4
+AppSet w, FlVy, 0
+sc = AppGet(w, FlScore)
+FlappyTimer w, 1
+Check "flappy: passing a pipe scores 1 and the bird lives", AppGet(w, FlScore) = sc + 1 AND AppGet(w, FlState) = 1, STR$(AppGet(w, FlScore)) + STR$(AppGet(w, FlState))
+'A pipe in the bird's way ends the round.
+AppSet w, FlGap, 200
+AppSet w, FlPx, FlBirdX - 5
+AppSet w, FlY, 140 * 4
+AppSet w, FlVy, 0
+FlappyTimer w, 1
+Check "flappy: a pipe in the way crashes the bird", AppGet(w, FlState) = 2 AND AppGet(w, FlBest) = AppGet(w, FlScore), STR$(AppGet(w, FlState))
+CompareToLegacy "flappy: the crashed window"
+FlappyKey w, " "
+Check "flappy: space after a crash starts over", AppGet(w, FlState) = 0 AND AppGet(w, FlScore) = 0, STR$(AppGet(w, FlState))
+'No flap: the bird falls to the ground and the round ends.
+FlappyKey w, " "
+n = 0
+DO WHILE AppGet(w, FlState) = 1 AND n < 300
+        FlappyTimer w, 1
+        n = n + 1
+LOOP
+Check "flappy: a bird that is not flapped crashes", AppGet(w, FlState) = 2 AND n < 300, STR$(n)
+FlappyReset w
+FlappyKey w, " "
+FlappyTimer w, 1
+FlappyTimer w, 1
+CompareToLegacy "flappy: the window during a round"
 WinClose w
 NoSync = 0
 END SUB

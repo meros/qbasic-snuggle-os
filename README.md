@@ -101,8 +101,9 @@ The procedures an app can call and the callbacks it can have are in
 write `apps/<name>.bas`, run the builder, and build. The apps
 are Hello (`apps/hello.bas`), Clock (`apps/clock.bas`, the system date and
 time, once a second), Calc (`apps/calc.bas`, + - * / on doubles, its state in
-the window's data block) and Notepad (`apps/notepad.bas`, ten lines, Save and
-Load, keys through `key=`).
+the window's data block) Notepad (`apps/notepad.bas`, ten lines, Save and
+Load, keys through `key=`) and Flappy (`apps/flappy.bas`, a Flappy Bird game:
+Space or the Flap button, a timer tick every 1/18 s, drawn with `UiFill`).
 
 | Procedure | What |
 | --- | --- |
@@ -185,7 +186,7 @@ The cases run as three programs (window, controls, heap, input, speed), and the 
 leaves out the mouse library, the hit tests, the drag loops and the palette
 setup, to keep the test build inside QBasic's memory (code and arrays share
 about 160 KB). `scripts/test.sh` prints the memory left after the first paint,
-about 54 KB, and fails below 25 KB. A program stops starting at about 20 KB.
+about 48 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 ## Layout
 
