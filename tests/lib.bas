@@ -301,3 +301,47 @@ WinClose WNew
 CompareToLegacy "desktop: a closed window uncovers the icons"
 IconCount = 0
 END SUB
+
+'Running out of memory: a refusal, never a crash, and nothing half made is left.
+SUB OomCase
+'The heap is full: the window made for the block goes again.
+WinReset
+a = AppWindow(9, "A", 10, 10, 100, 60, HeapWords + 1)
+OomFlag = 0
+b = AppWindow(9, "B", 50, 50, 100, 60, 5)
+Check "oom: no heap, no window, flag 1", b = 0 AND OomFlag = 1 AND WNumber = 1, STR$(b) + STR$(OomFlag) + STR$(WNumber)
+Check "oom: the first window and the full heap are intact", a > 0 AND HeapTop = HeapWords + 1, STR$(HeapTop)
+'Out of window slots.
+WinReset
+FOR i = 1 TO WNMax
+        w = AppWindow(9, "W", i * 5, i * 5, 90, 40, 1)
+NEXT
+OomFlag = 0
+b = AppWindow(9, "X", 0, 0, 90, 40, 1)
+Check "oom: no window slot, flag 2", b = 0 AND OomFlag = 2 AND WNumber = WNMax, STR$(WNumber)
+'Out of control slots, and a control of window 0 is refused without a flag.
+WinReset
+w = AppWindow(9, "C", 10, 10, 200, 200, 1)
+FOR i = 1 TO CtlMax
+        dummy = CtlAdd(w, CtlLabel, 0, 0, 10, 10, "")
+NEXT
+OomFlag = 0
+Check "oom: no control slot, flag 3", CtlAdd(w, CtlLabel, 0, 0, 10, 10, "") = 0 AND OomFlag = 3, STR$(OomFlag)
+OomFlag = 0
+Check "oom: a control of window 0 is refused quietly", CtlAdd(0, CtlLabel, 0, 0, 10, 10, "") = 0 AND OomFlag = 0, ""
+'An app that cannot get its memory leaves nothing behind.
+WinReset
+a = AppWindow(9, "Fill", 10, 10, 100, 60, HeapWords + 1 - 3)
+n = WNumber: t = HeapTop
+AppLaunch 1
+Check "oom launch: heap full, no window left", WNumber = n AND HeapTop = t AND OomFlag = 1 AND CtlCount = 0, STR$(WNumber) + STR$(HeapTop) + STR$(CtlCount)
+WinReset
+w = AppWindow(9, "C", 10, 10, 200, 200, 1)
+FOR i = 1 TO CtlMax
+        dummy = CtlAdd(w, CtlLabel, 0, 0, 10, 10, "")
+NEXT
+n = WNumber: t = HeapTop
+AppLaunch 1
+Check "oom launch: no control slot, the half made instance is closed", WNumber = n AND HeapTop = t AND OomFlag = 3, STR$(WNumber) + STR$(HeapTop)
+WinReset
+END SUB

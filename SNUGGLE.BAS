@@ -77,6 +77,7 @@ DIM SHARED IconX(7) AS INTEGER
 DIM SHARED IconY(7) AS INTEGER
 DIM SHARED IconText(7) AS STRING
 DIM SHARED IconCount AS INTEGER
+DIM SHARED OomFlag AS INTEGER           'what ran out last: 1 heap, 2 window slots, 3 control slots, 0 nothing
 DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
 
 
@@ -166,15 +167,22 @@ LOOP UNTIL UCASE$(k$) = "Q"
 '---------------------------------------------------------------------------
 '@@APP-BEGIN
 'Make a window for app, with a data block of words words that the kernel frees
-'when the window closes. Returns the window number. Control numbers and other
+'when the window closes. Returns the window number, or 0 when there is no slot or
+'no heap for it (OomFlag says which; the controls an app adds to window 0 are
+'refused, so an app need not check). Control numbers and other
 'state of an instance go in its block (AppGet, AppSet), so one app can run in
 'several windows.
 FUNCTION AppWindow (app, title$, x, y, w, h, words)
 NewWin title$, x, y, w, h
 AppWindow = 0
 IF WNew = 0 THEN EXIT FUNCTION
+h = MemAlloc(WNew, words)
+IF h = 0 THEN
+        WinClose WNew
+        EXIT FUNCTION
+END IF
 WGData(WNew, 6) = app
-WGData(WNew, 7) = MemAlloc(WNew, words)
+WGData(WNew, 7) = h
 AppWindow = WNew
 END FUNCTION
 
@@ -195,11 +203,23 @@ END SUB
 'Start an instance of an app and show its window.
 SUB AppLaunch (app)
 WNew = 0
+OomFlag = 0
 SELECT CASE app
 CASE 1
         HelloStart
 END SELECT
-IF WNew > 0 THEN WinShow WNew
+IF OomFlag = 0 THEN
+        IF WNew > 0 THEN WinShow WNew
+ELSE
+        'Out of memory: take back what the instance got, and say so.
+        IF WNew > 0 THEN IF WGData(WNew, 0) <> 0 THEN WinClose WNew
+        SELECT CASE OomFlag
+        CASE 1: m$ = "the heap is full"
+        CASE 2: m$ = "no free window"
+        CASE ELSE: m$ = "no free control"
+        END SELECT
+        Notice "Out of memory: " + m$ + ". The app was not started."
+END IF
 END SUB
 
 'A control of window win was clicked or accepted.
@@ -460,7 +480,10 @@ DO WHILE s <= WNMax
         IF WGData(s, 0) = 0 THEN EXIT DO
         s = s + 1
 LOOP
-IF s > WNMax THEN EXIT SUB
+IF s > WNMax THEN
+        OomFlag = 2
+        EXIT SUB
+END IF
 WNew = s
 WNumber = WNumber + 1
 WGData(s, 0) = 1
@@ -496,6 +519,15 @@ IF CtlFocus > 0 THEN IF Ctl(CtlFocus).win = 0 THEN CtlFocus = 0
 mouse.hide
 WaitRetrace
 RepaintRect x1, y1, x2, y2
+mouse.show
+END SUB
+
+'A line of text on a bar at the bottom of the screen. The next repaint of that
+'area removes it.
+SUB Notice (msg$)
+mouse.hide
+gFill 0, 464, 639, 479, 5
+cout msg$, 8, 463, 15, 624, 0
 mouse.show
 END SUB
 
@@ -576,23 +608,27 @@ END SUB
 'through its handle (1 to HeapMax), so the heap can move it: a free slides every
 'block above it down. There is no separate collection pass.
 '---------------------------------------------------------------------------
-'A block of n words, zeroed, owned by a window. Returns its handle, 0 when full.
+'A block of n words, zeroed, owned by a window. Returns its handle. When the heap
+'or the handles are full it returns 0 and sets OomFlag to 1.
 FUNCTION MemAlloc (owner, n)
 MemAlloc = 0
-IF n < 1 OR HeapTop + n > HeapWords + 1 THEN EXIT FUNCTION
-FOR h = 1 TO HeapMax
-        IF HSize(h) = 0 THEN
-                HBase(h) = HeapTop
-                HSize(h) = n
-                HOwner(h) = owner
-                FOR i = HeapTop TO HeapTop + n - 1
-                        Heap(i) = 0
-                NEXT
-                HeapTop = HeapTop + n
-                MemAlloc = h
-                EXIT FUNCTION
-        END IF
-NEXT
+IF n < 1 THEN EXIT FUNCTION
+IF HeapTop + n <= HeapWords + 1 THEN
+        FOR h = 1 TO HeapMax
+                IF HSize(h) = 0 THEN
+                        HBase(h) = HeapTop
+                        HSize(h) = n
+                        HOwner(h) = owner
+                        FOR i = HeapTop TO HeapTop + n - 1
+                                Heap(i) = 0
+                        NEXT
+                        HeapTop = HeapTop + n
+                        MemAlloc = h
+                        EXIT FUNCTION
+                END IF
+        NEXT
+END IF
+OomFlag = 1
 END FUNCTION
 
 SUB MemFree (h)
@@ -920,7 +956,10 @@ FOR i = 1 TO n
 NEXT
 END SUB
 
+'A list that is full drops the rectangle: part of the area stays unpainted, but
+'the program does not stop.
 SUB RPut (l, i, x1, y1, x2, y2)
+IF i > 64 THEN EXIT SUB
 RL(l, i, 1) = x1
 RL(l, i, 2) = y1
 RL(l, i, 3) = x2
@@ -1150,7 +1189,8 @@ END SUB
 'control number, and the main loop reads it.
 '---------------------------------------------------------------------------
 
-'Add a control and return its number (0 when the table is full).
+'Add a control and return its number. 0 when the table is full (OomFlag 3) or the
+'window is 0, a window that could not be made.
 'x, y, w, h are relative to the top left of the client area.
 FUNCTION CtlAdd (win, kind, x, y, w, h, cap$)
 id = 1
@@ -1159,7 +1199,11 @@ DO WHILE id <= CtlCount
         id = id + 1
 LOOP
 CtlAdd = 0
-IF id > CtlMax THEN EXIT FUNCTION
+IF win < 1 THEN EXIT FUNCTION
+IF id > CtlMax THEN
+        OomFlag = 3
+        EXIT FUNCTION
+END IF
 IF id > CtlCount THEN CtlCount = id
 Ctl(id).kind = kind
 Ctl(id).win = win

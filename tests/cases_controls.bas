@@ -123,4 +123,5 @@ Check "a checkbox redraw stays under 4000 writes", gWrites < 4000, STR$(gWrites)
 
 
 HeapCase
+OomCase
 END SUB
