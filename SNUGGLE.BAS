@@ -72,6 +72,11 @@ DIM SHARED Heap(HeapWords) AS INTEGER
 DIM SHARED HBase(HeapMax) AS INTEGER    'first word of a block
 DIM SHARED HSize(HeapMax) AS INTEGER    'words in a block, 0 for a free handle
 DIM SHARED HOwner(HeapMax) AS INTEGER   'window the block belongs to
+DIM SHARED IconApp(7) AS INTEGER        'desktop icons: the app they start, where they are, their name
+DIM SHARED IconX(7) AS INTEGER
+DIM SHARED IconY(7) AS INTEGER
+DIM SHARED IconText(7) AS STRING
+DIM SHARED IconCount AS INTEGER
 DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
 
 
@@ -89,6 +94,7 @@ refresh
 DO
 IF mouse.getbutton = LB THEN
 mouse.getpos cmx, cmy
+hit = 0
 FOR Cyc = 1 TO WNumber
 CW = WOrder(Cyc)
 part = WinPart(CW, cmx, cmy)
@@ -109,16 +115,13 @@ CASE 1 TO 3
         CASE 3
                 IF WGData(CW, 5) <> 0 THEN WinSetState CW, 0 ELSE WinSetState CW, 1
         END SELECT
-        EXIT FOR
 CASE 4
         CtlSetFocus 0
         WinPutTop CW
         IF WGData(CW, 5) <> 2 THEN StartDrag 0, CW
-        EXIT FOR
 CASE 5 TO 7
         WinPutTop CW
         IF WGData(CW, 5) <> 2 THEN StartDrag part - 4, CW
-        EXIT FOR
 CASE 8
         IF cid > 0 THEN
                 WinPutTop CW
@@ -128,9 +131,17 @@ CASE 8
                 DO: LOOP WHILE mouse.getbutton = LB
                 WinPutTop CW
         END IF
-        EXIT FOR
 END SELECT
+IF part <> 0 THEN hit = -1: EXIT FOR
 NEXT
+IF hit = 0 THEN
+        'the desktop: an icon starts an instance of its app
+        ic = IconAt(cmx, cmy)
+        IF ic > 0 THEN
+                DO: LOOP WHILE mouse.getbutton = LB
+                AppLaunch IconApp(ic)
+        END IF
+END IF
 END IF
 k$ = INKEY$
 IF CtlFocus <> 0 THEN
@@ -175,8 +186,20 @@ SUB AppSet (win, i, v)
 MemSet WGData(win, 7), i, v
 END SUB
 
+'Start what runs at boot: the icons, and one instance of Hello.
 SUB AppStartAll
-HelloStart
+IconAdd 1, "Hello"
+AppLaunch 1
+END SUB
+
+'Start an instance of an app and show its window.
+SUB AppLaunch (app)
+WNew = 0
+SELECT CASE app
+CASE 1
+        HelloStart
+END SELECT
+IF WNew > 0 THEN WinShow WNew
 END SUB
 
 'A control of window win was clicked or accepted.
@@ -193,7 +216,8 @@ END SUB
 CONST HelloWho = 0, HelloSnd = 1, HelloRed = 2, HelloBlue = 3, HelloOk = 4, HelloWipe = 5, HelloMsg = 6
 
 SUB HelloStart
-w = AppWindow(1, "Hello", 170, 100, 300, 240, 7)
+n = (WNumber MOD 6) * 24
+w = AppWindow(1, "Hello", 170 + n, 100 + n, 300, 240, 7)
 AppSet w, HelloWho, CtlAdd(w, CtlText, 70, 4, 200, 22, "snuggle")
 dummy = CtlAdd(w, CtlLabel, 8, 6, 60, 16, "Name:")
 AppSet w, HelloSnd, CtlAdd(w, CtlCheck, 8, 38, 170, 16, "Enable sound")
@@ -475,6 +499,65 @@ RepaintRect x1, y1, x2, y2
 mouse.show
 END SUB
 
+'Repaint the area of a window, for a window that was just made.
+SUB WinShow (who)
+WinRect who, x1, y1, x2, y2
+mouse.hide
+WaitRetrace
+RepaintRect x1, y1, x2, y2
+mouse.show
+END SUB
+
+'---------------------------------------------------------------------------
+'Desktop icons: a picture and a name on the background. A click on one starts
+'an instance of its app (AppLaunch). They are drawn with the background, so a
+'window that moves over one never needs to know about it.
+'---------------------------------------------------------------------------
+SUB IconAdd (app, label$)
+IF IconCount >= 7 THEN EXIT SUB
+IconCount = IconCount + 1
+IconApp(IconCount) = app
+IconText(IconCount) = label$
+IconX(IconCount) = 24
+IconY(IconCount) = 16 + (IconCount - 1) * 64
+END SUB
+
+'The icon at a screen point, 0 for none. The name belongs to the icon.
+FUNCTION IconAt (mx, my)
+IconAt = 0
+FOR i = 1 TO IconCount
+        IF mx >= IconX(i) - 16 AND mx <= IconX(i) + 48 AND my >= IconY(i) AND my <= IconY(i) + 50 THEN IconAt = i
+NEXT
+END FUNCTION
+
+'Draw the icons that touch the clip, or the screen when there is no clip.
+SUB IconsDraw
+FOR i = 1 TO IconCount
+        x = IconX(i)
+        y = IconY(i)
+        n = LEN(IconText(i))
+        IF NOT Outside(x - 16, y, x + 48, y + 50) THEN
+                DrwBtn x, y, 31, 31
+                gBox x + 7, y + 8, x + 24, y + 23, 1
+                gFill x + 8, y + 9, x + 23, y + 11, 6
+                gFill x + 8, y + 12, x + 23, y + 22, 15
+                cout IconText(i), x + 16 - n * 4, y + 33, 15, n * 8, 0
+        END IF
+NEXT
+END SUB
+
+'Fill a free part of the background and put the icons on it.
+SUB DeskFill (x1, y1, x2, y2)
+IF IconCount = 0 THEN
+        gFill x1, y1, x2, y2, 4
+ELSE
+        ClipOn x1, y1, x2, y2
+        gFill x1, y1, x2, y2, 4
+        IconsDraw
+        ClipOff
+END IF
+END SUB
+
 'All windows and heap blocks gone.
 SUB WinReset
 WNumber = 0
@@ -577,22 +660,6 @@ DO
                         IF what <> 1 THEN nh = wh + (y - oy)
                         WinSizeTo who, nw, nh
                 END IF
-        END IF
-LOOP UNTIL mouse.getbutton <> LB
-END SUB
-
-SUB StartXYDrag (what, who)
-mouse.getpos ox, oy
-        x = ox: y = oy
-        GetStats who, crap$, wx, wy, ww, wh, wstate
-DO
-        lx = x: ly = y
-        mouse.getpos x, y
-        IF lx <> x OR ly <> y THEN
-                nw = ww: nh = wh
-                IF what <> 2 THEN nw = ww + (x - ox)
-                IF what <> 1 THEN nh = wh + (y - oy)
-                WinSizeTo who, nw, nh
         END IF
 LOOP UNTIL mouse.getbutton <> LB
 END SUB
@@ -849,7 +916,7 @@ FOR Cyc = 1 TO WNumber
 NEXT
 
 FOR i = 1 TO n
-        gFill RL(c, i, 1), RL(c, i, 2), RL(c, i, 3), RL(c, i, 4), 4
+        DeskFill RL(c, i, 1), RL(c, i, 2), RL(c, i, 3), RL(c, i, 4)
 NEXT
 END SUB
 

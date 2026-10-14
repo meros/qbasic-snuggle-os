@@ -124,4 +124,6 @@ CompareToLegacy "move it"
 WinSetState 3, 2
 CompareToLegacy "maximise it again"
 
+
+IconCase
 END SUB

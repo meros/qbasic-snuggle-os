@@ -277,3 +277,27 @@ WinClose 1
 CompareToLegacy "close: a window with controls closes"
 Check "close: its controls take no click", CtlAt(150, 66) = 0, STR$(CtlAt(150, 66))
 END SUB
+
+'Desktop icons are part of the background: they show where it shows, and a
+'window moved over them leaves them whole.
+SUB IconCase
+Scene 1
+IconCount = 0
+IconAdd 1, "Hello"
+IconAdd 1, "Other"
+RepaintRect 0, 0, 639, 479
+CompareToLegacy "desktop: icons on the background"
+Check "an icon takes a click", IconAt(30, 20) = 1 AND IconAt(30, 90) = 2, STR$(IconAt(30, 20)) + STR$(IconAt(30, 90))
+Check "the desktop between icons is no icon", IconAt(300, 400) = 0 AND IconAt(30, 70) = 0, ""
+WinMoveTo 3, 10, 10
+CompareToLegacy "desktop: a window moved over the icons"
+WinMoveTo 3, 400, 300
+CompareToLegacy "desktop: the icons come back"
+before = WNumber
+AppLaunch 1
+Check "an icon launch makes one window", WNumber = before + 1 AND AppGet(WNew, 0) > 0, STR$(WNumber)
+CompareToLegacy "desktop: a launched window is painted"
+WinClose WNew
+CompareToLegacy "desktop: a closed window uncovers the icons"
+IconCount = 0
+END SUB

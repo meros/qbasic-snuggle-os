@@ -74,9 +74,11 @@ is repainted through the clip: 1.2 writes per pixel.
 
 ## Apps and the heap
 
-The desktop starts one app, Hello (`HelloStart` in the `'@@APP` block of
-`SNUGGLE.BAS`). An app is a set of procedures with a number. It is added by hand
-for now: a case in `AppStartAll` and one in `AppEvent`.
+The desktop starts one instance of the Hello app at boot and shows an icon for
+it on the background. A click on the icon starts another instance
+(`AppLaunch`). An app is a set of procedures with a number, in the `'@@APP`
+block of `SNUGGLE.BAS`. It is added by hand for now: `IconAdd` and a start
+procedure in `AppStartAll`/`AppLaunch`, and a case in `AppEvent`.
 
 | Procedure | What |
 | --- | --- |
