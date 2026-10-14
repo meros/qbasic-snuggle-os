@@ -11,8 +11,7 @@ ClockDay$ = MID$(d$, 7, 4) + "-" + LEFT$(d$, 2) + "-" + MID$(d$, 4, 2)
 END FUNCTION
 
 SUB ClockStart
-n = (WNumber MOD 6) * 24
-w = AppWindow(AppIdClock, "Clock", 420 + n, 40 + n, 170, 80, 2)
+w = AppWindow(AppIdClock, "Clock", 420, 40, 170, 80, 2)
 AppSet w, ClockDate, CtlAdd(w, CtlLabel, 8, 6, 140, 16, ClockDay$)
 AppSet w, ClockTime, CtlAdd(w, CtlLabel, 8, 30, 140, 16, TIME$)
 TimerSet AppIdClock, w, 1, 1 - (TIMER - INT(TIMER)) + .01

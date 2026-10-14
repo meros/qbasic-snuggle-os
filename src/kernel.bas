@@ -24,7 +24,7 @@ CONST CtlText = 5
 DIM SHARED GlyphData(1023) AS INTEGER   'characters 128 to 255, 16 row bytes each (characters 32 to 127 are read from SprData)
 DIM SHARED Mask(15) AS INTEGER          'the 16 row bytes of the glyph being drawn, bit 7 is the left pixel
 
-CONST HeapWords = 2047                  'the heap: 4 KB
+CONST HeapWords = 1023                  'the heap: 2 KB, enough for about 13 Hello windows
 CONST HeapMax = 63                      'blocks at most
 DIM SHARED Heap(HeapWords) AS INTEGER
 DIM SHARED HBase(HeapMax) AS INTEGER    'first word of a block
@@ -33,12 +33,13 @@ DIM SHARED HOwner(HeapMax) AS INTEGER   'window the block belongs to (a window o
 DIM SHARED HKind(HeapMax) AS INTEGER    'KWin, KCtl or KData
 DIM SHARED HText(HeapMax) AS STRING     'title of a window, caption of a control
 DIM SHARED HeapTop AS INTEGER           'first free word: the blocks fill 0 to HeapTop - 1, no gaps
-DIM SHARED TmUsed(16) AS INTEGER         'timers: what to call and when (see TimerSet)
-DIM SHARED TmApp(16) AS INTEGER
-DIM SHARED TmWin(16) AS INTEGER
-DIM SHARED TmTag(16) AS INTEGER
-DIM SHARED TmStart(16) AS SINGLE
-DIM SHARED TmDur(16) AS SINGLE
+CONST TimerMax = 16
+DIM SHARED TmUsed(TimerMax) AS INTEGER         'timers: what to call and when (see TimerSet)
+DIM SHARED TmApp(TimerMax) AS INTEGER
+DIM SHARED TmWin(TimerMax) AS INTEGER
+DIM SHARED TmTag(TimerMax) AS INTEGER
+DIM SHARED TmStart(TimerMax) AS SINGLE
+DIM SHARED TmDur(TimerMax) AS SINGLE
 DIM SHARED UiMode AS INTEGER            'immediate mode controls: 0 draw, 1 find the one under the pointer, 2 click
 DIM SHARED UiWin AS INTEGER             'the window being painted or probed, its client area, the pointer
 DIM SHARED UiOx AS INTEGER
@@ -76,10 +77,12 @@ DIM SHARED SprBg(2) AS INTEGER
 DIM SHARED CoutBg AS INTEGER            'background colour behind the text cout draws, -1 for unknown
 DIM SHARED NoSync AS INTEGER           'the tests set it: no wait for the retrace
 DIM SHARED ClipActive AS INTEGER        'cout skips glyphs outside the clip
-DIM SHARED ClipLX1 AS INTEGER
+DIM SHARED ClipLX1 AS INTEGER           'the clip, the whole screen when ClipActive is 0
 DIM SHARED ClipLY1 AS INTEGER
 DIM SHARED ClipLX2 AS INTEGER
 DIM SHARED ClipLY2 AS INTEGER
+ClipLX2 = 639
+ClipLY2 = 479
 DIM SHARED Scratch(4100) AS INTEGER     'GET and PUT buffer: BlitMove uses all of it (8000 bytes), ClipOn saves
                                         'a column in 0 to 961 and a row in 1000 to 1162
 DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
@@ -181,10 +184,12 @@ LOOP UNTIL UCASE$(k$) = "Q"
 'Make a window for app, with a data block of words words that the kernel frees
 'when the window closes. Returns the window number, or 0 when the heap had no room
 'for it (OomFlag is set; the controls an app adds to window 0 are refused, so an
-'app need not check). Control numbers and other state of an instance go in its
+'app need not check). Each window is moved 24 pixels down and right for every
+'window already open, up to 5, so new windows do not hide one another. Control numbers and other state of an instance go in its
 'block (AppGet, AppSet), so one app can run in several windows.
 FUNCTION AppWindow (app, title$, x, y, w, h, words)
-NewWin title$, x, y, w, h
+cascade = (WNumber MOD 6) * 24
+NewWin title$, x + cascade, y + cascade, w, h
 AppWindow = 0
 IF WNew = 0 THEN EXIT FUNCTION
 h = MemAlloc(WNew, KData, words)
@@ -228,7 +233,7 @@ END SUB
 'corner, 8 the client area, 0 none. A rolled-up window has a title bar only.
 FUNCTION WinPart (who, mx, my)
 WinPart = 0
-GetStats who, crap$, x, y, w, h, state
+WinGeom who, x, y, w, h, state
 IF mx < x OR mx > x + w OR my < y OR my > y + h THEN EXIT FUNCTION
 FOR b = 1 TO 3
         bx = x + w - TtlHeight * b
@@ -332,6 +337,10 @@ END SUB
 
 SUB GetStats (who, text$, x, y, w, h, state)
 text$ = HText(who)
+WinGeom who, x, y, w, h, state
+END SUB
+
+SUB WinGeom (who, x, y, w, h, state)
 b = HBase(who)
 IF Heap(b + WfW) < 90 THEN Heap(b + WfW) = 90
 IF Heap(b + WfH) < TtlHeight + 6 THEN Heap(b + WfH) = TtlHeight + 6
@@ -358,16 +367,24 @@ Pal 7, 0, 0, 42
 END SUB
 '@@INIT-END
 
-SUB MaxButton (x, y)
-gLine x + 2, y + 4, x + 10, y + 4, 1
-gLine x + 3, y + 3, x + 9, y + 3, 6
-gBox x + 2, y + 2, x + 10, y + 10, 1
-gFill x + 3, y + 5, x + 9, y + 9, 15
-END SUB
-
-SUB MinButton (x, y)
-gLine x + 3, y + 6, x + 9, y + 6, 6
-gBox x + 2, y + 5, x + 10, y + 7, 1
+'A title bar button with its picture: 1 close, 2 maximise, 3 roll up.
+SUB WinBtn (x, y, kind)
+DrwBtn x, y, TtlHeight - 6, TtlHeight - 6
+SELECT CASE kind
+CASE 1
+        gBox x + 5, y + 2, x + 7, y + 6, 1
+        gBox x + 5, y + 8, x + 7, y + 10, 1
+        gLine x + 6, y + 3, x + 6, y + 5, 6
+        gPset x + 6, y + 9, 6
+CASE 2
+        gLine x + 2, y + 4, x + 10, y + 4, 1
+        gLine x + 3, y + 3, x + 9, y + 3, 6
+        gBox x + 2, y + 2, x + 10, y + 10, 1
+        gFill x + 3, y + 5, x + 9, y + 9, 15
+CASE ELSE
+        gLine x + 3, y + 6, x + 9, y + 6, 6
+        gBox x + 2, y + 5, x + 10, y + 7, 1
+END SELECT
 END SUB
 
 '@@MOUSE-BEGIN
@@ -450,15 +467,12 @@ FOR i = p TO WNumber - 1
 NEXT
 WNumber = WNumber - 1
 MemFreeAll who
-FOR i = 1 TO 16
+FOR i = 1 TO TimerMax
         IF TmWin(i) = who AND TmApp(i) > 0 THEN TmUsed(i) = 0
 NEXT
 IF HSize(CtlFocus) = 0 THEN CtlFocus = 0
 IF HSize(CtlDown) = 0 THEN CtlDown = 0
-mouse.hide
-WaitRetrace
-RepaintRect x1, y1, x2, y2
-mouse.show
+Repaint x1, y1, x2, y2
 END SUB
 
 'A line of text on a bar at the bottom of the screen. The next repaint of that
@@ -487,7 +501,7 @@ oldmode = UiMode
 oldwin = UiWin
 UiMode = md
 UiWin = who
-GetStats who, crap$, x, y, w, h, state
+WinGeom who, x, y, w, h, state
 UiOx = x + 3
 UiOy = y + TtlHeight + 4
 UiRight = x + w - 3
@@ -495,11 +509,6 @@ UiBottom = y + h - 3
 AppPaint HGet(who, WfApp), who
 UiMode = oldmode
 UiWin = oldwin
-END SUB
-
-'Called when a window's content is painted, inside the clip.
-SUB UiPaint (who)
-UiRun who, 0
 END SUB
 
 'A push button at x, y (relative to the client area). In mode 2 it returns -1
@@ -534,13 +543,6 @@ IF x1 < UiOx OR y1 < UiOy OR x1 + w - 1 > UiRight OR y1 + h - 1 > UiBottom THEN 
 CtlCap t$, x1, y1 + (h - 16) \ 2 - 1, w, 15
 END SUB
 
-SUB UiRepaint (x1, y1, x2, y2)
-mouse.hide
-WaitRetrace
-RepaintRect x1, y1, x2, y2
-mouse.show
-END SUB
-
 'Click a button by its id: the app's procedure runs in mode 2, then the client
 'area is repainted, since the app may have changed what it shows.
 SUB UiFire (who, id)
@@ -548,7 +550,7 @@ UiClickId = id
 UiRun who, 2
 UiClickId = 0
 WinRect who, x1, y1, x2, y2
-UiRepaint x1, y1 + TtlHeight + 1, x2, y2
+Repaint x1, y1 + TtlHeight + 1, x2, y2
 END SUB
 
 'A click at a screen point in a window. Returns -1 when an immediate button
@@ -565,7 +567,7 @@ UiClick = -1
 id = UiHitId
 x1 = UiHx1: y1 = UiHy1: x2 = UiHx2: y2 = UiHy2
 UiDown = id
-UiRepaint x1, y1, x2, y2
+Repaint x1, y1, x2, y2
 isin = -1
 DO
         mouse.getpos mx, my
@@ -573,11 +575,11 @@ DO
         IF over <> isin THEN
                 isin = over
                 IF isin THEN UiDown = id ELSE UiDown = 0
-                UiRepaint x1, y1, x2, y2
+                Repaint x1, y1, x2, y2
         END IF
 LOOP WHILE mouse.getbutton = LB
 UiDown = 0
-IF isin THEN UiFire who, id ELSE UiRepaint x1, y1, x2, y2
+IF isin THEN UiFire who, id ELSE Repaint x1, y1, x2, y2
 END FUNCTION
 
 '---------------------------------------------------------------------------
@@ -590,7 +592,7 @@ END FUNCTION
 '---------------------------------------------------------------------------
 SUB TimerSet (app, win, tag, secs!)
 s = 0
-FOR i = 1 TO 16
+FOR i = 1 TO TimerMax
         IF TmUsed(i) THEN
                 IF TmApp(i) = app AND TmWin(i) = win AND TmTag(i) = tag THEN s = i
         ELSEIF f = 0 THEN
@@ -608,7 +610,7 @@ TmDur(s) = secs!
 END SUB
 
 SUB TimersRun
-FOR i = 1 TO 16
+FOR i = 1 TO TimerMax
         IF TmUsed(i) THEN
                 e! = TIMER - TmStart(i)
                 IF e! < 0 THEN e! = e! + 86400
@@ -616,9 +618,7 @@ FOR i = 1 TO 16
                         TmUsed(i) = 0
                         IF TmApp(i) = 0 THEN
                                 'kernel tag 1: take the notice off the bottom bar
-                                mouse.hide
-                                RepaintRect 0, 464, 639, 479
-                                mouse.show
+                                Repaint 0, 464, 639, 479
                         ELSE
                                 AppTimer TmApp(i), TmWin(i), TmTag(i)
                         END IF
@@ -630,10 +630,7 @@ END SUB
 'Repaint the area of a window, for a window that was just made.
 SUB WinShow (who)
 WinRect who, x1, y1, x2, y2
-mouse.hide
-WaitRetrace
-RepaintRect x1, y1, x2, y2
-mouse.show
+Repaint x1, y1, x2, y2
 END SUB
 
 '---------------------------------------------------------------------------
@@ -692,6 +689,7 @@ WNumber = 0
 FOR h = 1 TO HeapMax
         HSize(h) = 0
         HKind(h) = 0
+        HText(h) = ""
 NEXT
 HeapTop = 0
 CtlFocus = 0
@@ -716,7 +714,6 @@ IF HeapTop + n <= HeapWords + 1 THEN
                         HSize(h) = n
                         HOwner(h) = owner
                         HKind(h) = kind
-                        HText(h) = ""
                         FOR i = HeapTop TO HeapTop + n - 1
                                 Heap(i) = 0
                         NEXT
@@ -772,19 +769,16 @@ SUB MemSet (h, i, v)
 IF h >= 1 AND h <= HeapMax THEN IF i >= 0 AND i < HSize(h) THEN Heap(HBase(h) + i) = v
 END SUB
 
-SUB QuitButton (x, y)
-gBox x + 5, y + 2, x + 7, y + 6, 1
-gBox x + 5, y + 8, x + 7, y + 10, 1
-gLine x + 6, y + 3, x + 6, y + 5, 6
-gPset x + 6, y + 9, 6
-
-
+'Repaint a screen rectangle with the pointer hidden, after the retrace.
+SUB Repaint (x1, y1, x2, y2)
+mouse.hide
+WaitRetrace
+RepaintRect x1, y1, x2, y2
+mouse.show
 END SUB
 
 SUB refresh
-mouse.hide
-RepaintRect 0, 0, 639, 479
-mouse.show
+Repaint 0, 0, 639, 479
 END SUB
 
 '@@DRAG-BEGIN
@@ -793,7 +787,7 @@ END SUB
 SUB StartDrag (what, who)
 mouse.getpos ox, oy
 x = ox: y = oy
-GetStats who, crap$, wx, wy, ww, wh, wstate
+WinGeom who, wx, wy, ww, wh, wstate
 DO
         lx = x: ly = y
         mouse.getpos x, y
@@ -823,13 +817,9 @@ SUB WinDrw (text$, x, y, w, h, state)
                 cout print$, x + 5, y, 2, Lengh + 8, 0
                 CoutBg = -1
 
-                DrwBtn x + w - TtlHeight * 3, y + 3, TtlHeight - 6, TtlHeight - 6
-                DrwBtn x + w - TtlHeight * 2, y + 3, TtlHeight - 6, TtlHeight - 6
-                DrwBtn x + w - TtlHeight * 1, y + 3, TtlHeight - 6, TtlHeight - 6
-
-                MinButton x + w - TtlHeight * 3, y + 3
-                MaxButton x + w - TtlHeight * 2, y + 3
-                QuitButton x + w - TtlHeight * 1, y + 3
+                FOR b = 1 TO 3
+                        WinBtn x + w - TtlHeight * b, y + 3, b
+                NEXT
         END IF
         IF state <> 0 THEN
                 IF NOT Outside(x, y + TtlHeight + 1, x + w, y + h) THEN WinDrwBrd x, y + TtlHeight + 1, x + w, y + h
@@ -863,7 +853,7 @@ GetStats who, text$, x, y, w, h, state
 WinDrw text$, x, y, w, h, state
 IF state <> 0 THEN
         CtlDrawAll who
-        UiPaint who
+        UiRun who, 0
 END IF
 END SUB
 
@@ -905,11 +895,9 @@ END SUB
 
 'The rectangle a window covers, both ends included (screen coordinates).
 SUB WinRect (who, x1, y1, x2, y2)
-GetStats who, crap$, x, y, w, h, state
-x1 = x
-y1 = y
-x2 = x + w
-y2 = y + h
+WinGeom who, x1, y1, x2, y2, state
+x2 = x1 + x2
+y2 = y1 + y2
 END SUB
 
 'Move a window and paint only what changed.
@@ -999,10 +987,7 @@ IF oldst <> 2 AND st <> 2 THEN
         'rolled up or normal before and after: same position and width, same
         'title bar. Only the part below it changes.
         IF oy2 > ny2 THEN ny2 = oy2
-        mouse.hide
-        WaitRetrace
-        RepaintRect nx1, ny1 + TtlHeight + 1, nx2, ny2
-        mouse.show
+        Repaint nx1, ny1 + TtlHeight + 1, nx2, ny2
 ELSE
         RepaintChange ox1, oy1, ox2, oy2, nx1, ny1, nx2, ny2
 END IF
@@ -1112,6 +1097,7 @@ END SUB
 
 SUB ClipOff
 ClipActive = 0
+ClipLX1 = 0: ClipLY1 = 0: ClipLX2 = 639: ClipLY2 = 479
 gViewOff
 IF ClipCol THEN PUT (ClipColX, ClipColY), Scratch, PSET
 IF ClipRow THEN PUT (ClipRowX, ClipRowY), Scratch(1000), PSET
@@ -1182,16 +1168,11 @@ END SUB
 'calls: QBasic's LINE leaves a stray pixel in the bottom left corner of the view
 'for a box that is entirely below and left of it.
 FUNCTION Outside (x1, y1, x2, y2)
-IF ClipActive THEN
-        l = ClipLX1: t = ClipLY1: r = ClipLX2: b = ClipLY2
-ELSE
-        l = 0: t = 0: r = 639: b = 479
-END IF
 xl = x1: xh = x2
 IF xl > xh THEN xl = x2: xh = x1
 yl = y1: yh = y2
 IF yl > yh THEN yl = y2: yh = y1
-Outside = (xh < l OR xl > r OR yh < t OR yl > b)
+Outside = (xh < ClipLX1 OR xl > ClipLX2 OR yh < ClipLY1 OR yl > ClipLY2)
 END FUNCTION
 
 'Draw the glyph in Mask as runs of set pixels, from the top left corner gx, gy.
@@ -1216,12 +1197,8 @@ END SUB
 'sprite for the style st is one PUT. At the edge of the clip, or without a style,
 'it goes out as runs, which LINE clips.
 SUB Glyph (gx, gy, num, colo, st)
-IF ClipActive THEN
-        IF gx + 7 < ClipLX1 OR gx > ClipLX2 OR gy + 15 < ClipLY1 OR gy > ClipLY2 THEN EXIT SUB
-        whole = gx >= ClipLX1 AND gx + 7 <= ClipLX2 AND gy >= ClipLY1 AND gy + 15 <= ClipLY2
-ELSE
-        whole = gx >= 0 AND gx + 7 <= 639 AND gy >= 0 AND gy + 15 <= 479
-END IF
+IF gx + 7 < ClipLX1 OR gx > ClipLX2 OR gy + 15 < ClipLY1 OR gy > ClipLY2 THEN EXIT SUB
+whole = gx >= ClipLX1 AND gx + 7 <= ClipLX2 AND gy >= ClipLY1 AND gy + 15 <= ClipLY2
 IF num < 32 THEN EXIT SUB
 IF st >= 0 AND whole AND num < 128 THEN
         spr = (st * 96 + num - 32) * 34
@@ -1322,18 +1299,19 @@ END FUNCTION
 
 'The screen rectangle of a control, both ends included.
 SUB CtlRect (id, x1, y1, x2, y2)
-WinRect HOwner(id), wx1, wy1, wx2, wy2
-x1 = wx1 + 3 + HGet(id, CfX)
-y1 = wy1 + TtlHeight + 4 + HGet(id, CfY)
-x2 = x1 + HGet(id, CfW) - 1
-y2 = y1 + HGet(id, CfH) - 1
+WinGeom HOwner(id), wx, wy, ww, wh, wstate
+b = HBase(id)
+x1 = wx + 3 + Heap(b + CfX)
+y1 = wy + TtlHeight + 4 + Heap(b + CfY)
+x2 = x1 + Heap(b + CfW) - 1
+y2 = y1 + Heap(b + CfH) - 1
 END SUB
 
 '-1 when the control is drawn: its window is not rolled up and the whole
 'control is inside the client area.
 FUNCTION CtlVisible (id)
 CtlVisible = 0
-GetStats HOwner(id), crap$, x, y, w, h, state
+WinGeom HOwner(id), x, y, w, h, state
 IF state = 0 THEN EXIT FUNCTION
 CtlRect id, x1, y1, x2, y2
 IF x1 >= x + 3 AND y1 >= y + TtlHeight + 4 AND x2 <= x + w - 3 AND y2 <= y + h - 3 THEN CtlVisible = -1
@@ -1343,7 +1321,7 @@ SUB CtlDraw (id)
 CtlRect id, x1, y1, x2, y2
 w = HGet(id, CfW)
 h = HGet(id, CfH)
-cap$ = RTRIM$(HText(id))
+cap$ = HText(id)
 ty = y1 + (h - 16) \ 2 - 1
 SELECT CASE HGet(id, CfKind)
 CASE CtlLabel
@@ -1409,7 +1387,7 @@ END SUB
 'Draw the controls of one window, in the order they were added. A control
 'outside the clip, or not entirely inside the client area, is not drawn.
 SUB CtlDrawAll (who)
-GetStats who, crap$, x, y, w, h, state
+WinGeom who, x, y, w, h, state
 IF state = 0 THEN EXIT SUB
 ox = x + 3
 oy = y + TtlHeight + 4
@@ -1572,13 +1550,12 @@ END SUB
 
 'A key for the focused text box. Printable keys are added (40 characters at
 'most), Backspace removes one, Enter accepts (CtlEvent), Esc leaves the box.
-'The caption is stored in a fixed string, so trailing spaces are not kept.
 SUB CtlKey (k$)
 id = CtlFocus
 IF id = 0 OR LEN(k$) <> 1 THEN EXIT SUB
 IF HGet(id, CfKind) <> CtlText THEN EXIT SUB
 c = ASC(k$)
-cur$ = RTRIM$(HText(id))
+cur$ = HText(id)
 SELECT CASE c
 CASE 8
         IF LEN(cur$) > 0 THEN
@@ -1603,7 +1580,7 @@ CtlRedraw id
 END SUB
 
 FUNCTION CtlGetText$ (id)
-CtlGetText$ = RTRIM$(HText(id))
+CtlGetText$ = HText(id)
 END FUNCTION
 
 'Check or uncheck a checkbox or radio button. Use CtlSelect for a radio button

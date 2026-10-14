@@ -5,8 +5,7 @@
 CONST HelloWho = 0, HelloSnd = 1, HelloRed = 2, HelloBlue = 3, HelloOk = 4, HelloWipe = 5, HelloMsg = 6
 
 SUB HelloStart
-n = (WNumber MOD 6) * 24
-w = AppWindow(AppIdHello, "Hello", 170 + n, 100 + n, 300, 240, 7)
+w = AppWindow(AppIdHello, "Hello", 170, 100, 300, 240, 7)
 AppSet w, HelloWho, CtlAdd(w, CtlText, 70, 4, 200, 22, "snuggle")
 dummy = CtlAdd(w, CtlLabel, 8, 6, 60, 16, "Name:")
 AppSet w, HelloSnd, CtlAdd(w, CtlCheck, 8, 38, 170, 16, "Enable sound")

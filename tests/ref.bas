@@ -10,6 +10,25 @@ gLine x + w, y + h, x + 1, y + h, Col1
 gLine x + w, y + h, x + w, y + 1, Col1
 END SUB
 
+'The pictures on the three title bar buttons, as they were drawn in 1999.
+SUB RefBtnGlyph (x, y, kind)
+SELECT CASE kind
+CASE 1
+        gBox x + 5, y + 2, x + 7, y + 6, 1
+        gBox x + 5, y + 8, x + 7, y + 10, 1
+        gLine x + 6, y + 3, x + 6, y + 5, 6
+        gPset x + 6, y + 9, 6
+CASE 2
+        gLine x + 2, y + 4, x + 10, y + 4, 1
+        gLine x + 3, y + 3, x + 9, y + 3, 6
+        gBox x + 2, y + 2, x + 10, y + 10, 1
+        gFill x + 3, y + 5, x + 9, y + 9, 15
+CASE ELSE
+        gLine x + 3, y + 6, x + 9, y + 6, 6
+        gBox x + 2, y + 5, x + 10, y + 7, 1
+END SELECT
+END SUB
+
 SUB RefWinDrwBrd (x1, y1, x2, y2)
 gFill x1, y1, x2, y2, 15
 gBox x1, y1, x2, y2, 3
@@ -43,9 +62,9 @@ SUB RefWinDrw (text$, x, y, w, h, state, btnA, btnB, btnC)
                 RefDrwBtn x + w - TtlHeight * 2, y + 3, TtlHeight - 6, TtlHeight - 6, btnB
                 RefDrwBtn x + w - TtlHeight * 1, y + 3, TtlHeight - 6, TtlHeight - 6, btnC
 
-                MinButton x + w - TtlHeight * 3, y + 3
-                MaxButton x + w - TtlHeight * 2, y + 3
-                QuitButton x + w - TtlHeight * 1, y + 3
+                RefBtnGlyph x + w - TtlHeight * 3, y + 3, 3
+                RefBtnGlyph x + w - TtlHeight * 2, y + 3, 2
+                RefBtnGlyph x + w - TtlHeight * 1, y + 3, 1
         IF state <> 0 THEN RefWinDrwBrd x, y + TtlHeight + 1, x + w, y + h
 END SUB
 
@@ -54,7 +73,7 @@ GetStats who, text$, x, y, w, h, state
 RefWinDrw text$, x, y, w, h, state, 1, 1, 1
 IF state <> 0 THEN
         CtlDrawAll who
-        UiPaint who
+        UiRun who, 0
 END IF
 END SUB
 

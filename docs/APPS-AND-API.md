@@ -48,12 +48,12 @@ function pointers.
 - **"Freestanding":** the source is separate; the running program is not.
 - **Cost:** low. Everything needed exists in the engine now.
 - **Limit (measured):** memory, not source size. After its first paint
-  `SNUGGLE.BAS` (37 KB of source, 27 KB of arrays) leaves 86 KB of the 160 KB
-  pool free, and a program stops starting at about 20 KB free. That is about
-  65 KB for apps, in code, string constants and arrays together (a string
-  constant costs its length from the pool; 17 KB of them start). `scripts/test.sh`
-  prints the free memory and fails below 25 KB. Splitting the kernel with
-  `CHAIN` is not needed.
+  `SNUGGLE.BAS` (58 KB of source: kernel, three apps and the immediate mode
+  layer; 31 KB of arrays) leaves 62 KB of the 160 KB pool free, and a program
+  stops starting at about 20 KB free. That is about 40 KB for more apps, in code,
+  string constants and arrays together (a string constant costs its length from
+  the pool). `scripts/test.sh` prints the free memory and fails below 25 KB.
+  Splitting the kernel with `CHAIN` is not needed.
 
 ### B. Apps as separate programs with `CHAIN`
 

@@ -109,7 +109,7 @@ in the window's data block).
 | `WinClose win` | Closes the window: its controls and data are freed and the heap is compacted, the area is repainted. The close button calls it. |
 | `TimerSet(app, win, tag, seconds)` | One callback after the time: the kernel for app 0, else `AppTimer app, win, tag`. The same app, window and tag set again starts over. A closed window's timers go. The clock is `TIMER`; a callback waits while a drag or a button press runs. |
 
-The heap is one 4 KB array and the only allocator. A window, a control and an
+The heap is one 2 KB array and the only allocator. A window, a control and an
 app data block are blocks of it, used through handles; the handle is the id of
 the window or the control. Blocks are packed from word 0 without gaps, so a free
 slides the blocks above it down at once. Every block has an owner, a window; a
@@ -182,7 +182,7 @@ The cases run as three programs (window, controls, heap, speed), and the test bu
 leaves out the mouse library, the hit tests, the drag loops and the palette
 setup, to keep the test build inside QBasic's memory (code and arrays share
 about 160 KB). `scripts/test.sh` prints the memory left after the first paint,
-about 86 KB, and fails below 25 KB. A program stops starting at about 20 KB.
+about 62 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 ## Layout
 

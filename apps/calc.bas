@@ -31,8 +31,7 @@ END IF
 END FUNCTION
 
 SUB CalcStart
-n = (WNumber MOD 6) * 24
-w = AppWindow(AppIdCalc, "Calculator", 60 + n, 120 + n, 198, 230, 7)
+w = AppWindow(AppIdCalc, "Calculator", 60, 120, 198, 230, 7)
 AppSet w, CalcFresh, 1
 AppSet w, CalcDisp, CtlAdd(w, CtlLabel, 8, 6, 176, 16, "0")
 END SUB
