@@ -55,6 +55,7 @@ DIM SHARED UiHx2 AS INTEGER
 DIM SHARED UiHy2 AS INTEGER
 DIM SHARED UiDown AS INTEGER            'mode 0: the button that looks pressed, 0 for none
 DIM SHARED UiClickId AS INTEGER         'mode 2: the button that was clicked
+DIM SHARED QuitFlag AS INTEGER           '-1 when the user asked to leave
 DIM SHARED OomFlag AS INTEGER           '-1 when a block could not be had, set by MemAlloc
 DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
 DIM SHARED WNew AS INTEGER              'the window NewWin made last, 0 when it could not
@@ -107,6 +108,14 @@ AppStartAll
 refresh
 
 DO
+MainStep
+LOOP UNTIL QuitFlag
+'@@RUN-END
+
+'One pass of the main loop: a click on a window or the desktop (it runs until
+'the button goes up), a key, a control event, the timers. The tests call it
+'with a scripted mouse.
+SUB MainStep
 IF mouse.getbutton = LB THEN
 mouse.getpos cmx, cmy
 hit = 0
@@ -151,6 +160,7 @@ IF part <> 0 THEN hit = -1: EXIT FOR
 NEXT
 IF hit = 0 THEN
         'the desktop: an icon starts an instance of its app
+        CtlSetFocus 0
         ic = IconAt(cmx, cmy)
         IF ic > 0 THEN
                 DO: LOOP WHILE mouse.getbutton = LB
@@ -158,10 +168,18 @@ IF hit = 0 THEN
         END IF
 END IF
 END IF
-k$ = INKEY$
+k$ = ReadKey$
 IF CtlFocus <> 0 THEN
         CtlKey k$
         k$ = ""
+END IF
+IF k$ <> "" AND WNumber > 0 THEN
+        'keys go to the front window's app when it takes keys
+        top = WOrder(1)
+        IF AppWantsKeys(HGet(top, WfApp)) THEN
+                AppKey HGet(top, WfApp), top, k$
+                k$ = ""
+        END IF
 END IF
 IF CtlEvent <> 0 THEN
         AppEvent HOwner(CtlEvent), CtlEvent
@@ -169,8 +187,9 @@ IF CtlEvent <> 0 THEN
 END IF
 TimersRun
 IF UCASE$(k$) = "R" THEN refresh
-LOOP UNTIL UCASE$(k$) = "Q"
-'@@RUN-END
+IF UCASE$(k$) = "Q" THEN QuitFlag = -1
+END SUB
+
 
 '---------------------------------------------------------------------------
 'Applications. An app is a set of procedures with its own number. The kernel
@@ -187,6 +206,7 @@ LOOP UNTIL UCASE$(k$) = "Q"
 'app need not check). Each window is moved 24 pixels down and right for every
 'window already open, up to 5, so new windows do not hide one another. Control numbers and other state of an instance go in its
 'block (AppGet, AppSet), so one app can run in several windows.
+'@api Windows | Make a window of the app with a data block of `words` words, cascaded 24 px for each open window. Returns the window number, 0 when the heap has no room.
 FUNCTION AppWindow (app, title$, x, y, w, h, words)
 cascade = (WNumber MOD 6) * 24
 NewWin title$, x + cascade, y + cascade, w, h
@@ -202,18 +222,51 @@ HSet WNew, WfData, h
 AppWindow = WNew
 END FUNCTION
 
+'@api Windows | Word `i` of the window's data block (0 when out of range).
 FUNCTION AppGet (win, i)
 AppGet = MemGet(HGet(win, WfData), i)
 END FUNCTION
 
+'@api Windows | Set word `i` of the window's data block (ignored when out of range).
 SUB AppSet (win, i, v)
 MemSet HGet(win, WfData), i, v
+END SUB
+
+'A block of one word that holds a string, owned by a window and freed with it.
+'Returns its handle, 0 when the heap is full. BlockText$ and BlockSetText
+'read and write the string (a handle that is not a data block reads "").
+'@api Windows | A one word block owned by the window that holds a string. Returns its handle, 0 when the heap is full.
+FUNCTION AppBlock (win)
+AppBlock = MemAlloc(win, KData, 1)
+END FUNCTION
+
+'@api Windows | The string of a block made with `AppBlock`.
+FUNCTION BlockText$ (h)
+BlockText$ = ""
+IF h >= 1 AND h <= HeapMax THEN
+        IF HKind(h) = KData THEN BlockText$ = HText(h)
+END IF
+END FUNCTION
+
+'@api Windows | Set the string of a block made with `AppBlock`.
+SUB BlockSetText (h, t$)
+IF h >= 1 AND h <= HeapMax THEN
+        IF HKind(h) = KData THEN HText(h) = t$
+END IF
+END SUB
+
+'Repaint the client area of a window after the app changed what it shows.
+'@api Windows | Repaint the client area of a window after the app changed what it shows.
+SUB WinInvalidate (who)
+WinRect who, x1, y1, x2, y2
+Repaint x1, y1 + TtlHeight + 1, x2, y2
 END SUB
 
 'Start an instance of an app and show its window.
 SUB AppLaunch (app)
 WNew = 0
 OomFlag = 0
+CtlSetFocus 0
 AppRun app
 IF OomFlag = 0 THEN
         IF WNew > 0 THEN WinShow WNew
@@ -418,6 +471,11 @@ IF MouseOK THEN MouseCall 3, bx, c, d
 mouse.getbutton = bx AND 7
 END FUNCTION
 
+'The next key, "" when there is none.
+FUNCTION ReadKey$
+ReadKey$ = INKEY$
+END FUNCTION
+
 'Pointer position in pixels.
 SUB mouse.getpos (x, y)
 IF MouseOK THEN MouseCall 3, b, x, y
@@ -456,8 +514,11 @@ WinMakeHighest WNew
 END SUB
 
 'Close a window: it leaves the order, everything it owns (its controls, its data)
-'is freed and the heap compacted, and the area it covered is repainted.
-SUB WinClose (who)
+'is freed and the heap compacted, and the area it covered is repainted. The
+'argument is copied first, so it may be an element of WOrder.
+'@api Windows | Close a window: its controls, blocks and timers go, and the area is repainted.
+SUB WinClose (win)
+who = win
 WinRect who, x1, y1, x2, y2
 FOR i = 1 TO WNumber
         IF WOrder(i) = who THEN p = i
@@ -477,6 +538,7 @@ END SUB
 
 'A line of text on a bar at the bottom of the screen. The next repaint of that
 'area removes it.
+'@api Windows | Show a line of text on the bar at the bottom of the screen for 4 seconds.
 SUB Notice (msg$)
 mouse.hide
 gFill 0, 464, 639, 479, 5
@@ -514,8 +576,10 @@ END SUB
 'A push button at x, y (relative to the client area). In mode 2 it returns -1
 'when it is the clicked one. A button that does not fit in the client area is
 'neither drawn nor hit, as for retained controls.
+'@api Immediate mode | A push button (`id` 1 or more, x and y relative to the client area). Returns -1 when it was clicked (only in the click pass), so the app does its work in the IF.
 FUNCTION UiButton (id, x, y, w, h, cap$)
 UiButton = 0
+IF id < 1 THEN EXIT FUNCTION
 x1 = UiOx + x
 y1 = UiOy + y
 x2 = x1 + w - 1
@@ -535,6 +599,7 @@ END SELECT
 END FUNCTION
 
 'Text in black on the client background (drawing only).
+'@api Immediate mode | Text in black on the client area, `h` high.
 SUB UiLabel (x, y, w, h, t$)
 IF UiMode <> 0 THEN EXIT SUB
 x1 = UiOx + x
@@ -549,8 +614,7 @@ SUB UiFire (who, id)
 UiClickId = id
 UiRun who, 2
 UiClickId = 0
-WinRect who, x1, y1, x2, y2
-Repaint x1, y1 + TtlHeight + 1, x2, y2
+WinInvalidate who
 END SUB
 
 'A click at a screen point in a window. Returns -1 when an immediate button
@@ -578,6 +642,9 @@ DO
                 Repaint x1, y1, x2, y2
         END IF
 LOOP WHILE mouse.getbutton = LB
+'where the pointer is now decides, not where it was at the last look
+mouse.getpos mx, my
+isin = (mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2)
 UiDown = 0
 IF isin THEN UiFire who, id ELSE Repaint x1, y1, x2, y2
 END FUNCTION
@@ -590,6 +657,7 @@ END FUNCTION
 'good to about 1/100 s; a callback waits while the program is in a drag or a
 'button press.
 '---------------------------------------------------------------------------
+'@api Timers | Call the app's timer procedure once after `secs!` seconds with `tag`. Setting the same app, window and tag again starts over.
 SUB TimerSet (app, win, tag, secs!)
 s = 0
 FOR i = 1 TO TimerMax
@@ -704,6 +772,7 @@ END SUB
 '---------------------------------------------------------------------------
 'A block of n words of a kind, zeroed, owned by a window. Returns its handle.
 'When the heap or the handles are full it returns 0 and sets OomFlag.
+'@api Heap | A zeroed block of `n` words of a kind (KData for app data) owned by a window. Returns its handle, 0 and OomFlag when full.
 FUNCTION MemAlloc (owner, kind, n)
 MemAlloc = 0
 IF n < 1 THEN EXIT FUNCTION
@@ -726,6 +795,7 @@ END IF
 OomFlag = -1
 END FUNCTION
 
+'@api Heap | Free one block and close the gap.
 SUB MemFree (h)
 n = HSize(h)
 IF n = 0 THEN EXIT SUB
@@ -753,6 +823,7 @@ Heap(HBase(h) + f) = v
 END SUB
 
 'Free every block a window owns (what closing an instance does).
+'@api Heap | Free every block a window owns.
 SUB MemFreeAll (owner)
 FOR h = 1 TO HeapMax
         IF HSize(h) > 0 AND HOwner(h) = owner THEN MemFree h
@@ -760,11 +831,13 @@ NEXT
 END SUB
 
 'Word i of a block. An index outside the block reads 0 and writes nothing.
+'@api Heap | Word `i` of a block (0 when out of range).
 FUNCTION MemGet (h, i)
 MemGet = 0
 IF h >= 1 AND h <= HeapMax THEN IF i >= 0 AND i < HSize(h) THEN MemGet = Heap(HBase(h) + i)
 END FUNCTION
 
+'@api Heap | Set word `i` of a block (ignored when out of range).
 SUB MemSet (h, i, v)
 IF h >= 1 AND h <= HeapMax THEN IF i >= 0 AND i < HSize(h) THEN Heap(HBase(h) + i) = v
 END SUB
@@ -885,8 +958,12 @@ NEXT
 WOrder(1) = num
 END SUB
 
+'@api Windows | Bring a window to the front.
 SUB WinPutTop (who)
 IF WOrder(1) <> who THEN
+        IF CtlFocus > 0 THEN
+                IF HOwner(CtlFocus) <> who THEN CtlSetFocus 0
+        END IF
         WinMakeHighest who
         WinRect who, x1, y1, x2, y2
         RepaintChange x1, y1, x2, y2, x1, y1, x2, y2
@@ -894,6 +971,7 @@ END IF
 END SUB
 
 'The rectangle a window covers, both ends included (screen coordinates).
+'@api Windows | The screen rectangle of a window, both ends included.
 SUB WinRect (who, x1, y1, x2, y2)
 WinGeom who, x1, y1, x2, y2, state
 x2 = x1 + x2
@@ -901,6 +979,7 @@ y2 = y1 + y2
 END SUB
 
 'Move a window and paint only what changed.
+'@api Windows | Move a window to x, y. Only what changed is repainted.
 SUB WinMoveTo (who, nx, ny)
 WinRect who, ox1, oy1, ox2, oy2
 dx = nx - HGet(who, WfX)
@@ -938,6 +1017,7 @@ IF a2 + d > last THEN a2 = last - d
 END SUB
 
 'Resize a window and paint only what changed.
+'@api Windows | Resize a window. Only what changed is repainted.
 SUB WinSizeTo (who, nw, nh)
 WinRect who, ox1, oy1, ox2, oy2
 oldst = HGet(who, WfState)
@@ -978,6 +1058,7 @@ mouse.show
 END SUB
 
 'Set the window state (0 rolled up, 1 normal, 2 maximised) and paint only what changed.
+'@api Windows | Set the state of a window: 0 rolled up, 1 normal, 2 maximised.
 SUB WinSetState (who, st)
 WinRect who, ox1, oy1, ox2, oy2
 oldst = HGet(who, WfState)
@@ -1282,6 +1363,7 @@ END SUB
 'Add a control to a window and return its number. 0 when the heap is full
 '(OomFlag), or when the window is 0, a window that could not be made.
 'x, y, w, h are relative to the top left of the client area.
+'@api Controls | Add a retained control (CtlLabel, CtlButton, CtlCheck, CtlRadio or CtlText) to a window. Returns its number, 0 when the heap is full.
 FUNCTION CtlAdd (win, kind, x, y, w, h, cap$)
 CtlAdd = 0
 IF win < 1 THEN EXIT FUNCTION
@@ -1481,6 +1563,7 @@ NEXT
 END FUNCTION
 
 'Give the keys to a text box, or to nobody (0).
+'@api Controls | Give the keys to a text box, 0 for none.
 SUB CtlSetFocus (id)
 old = CtlFocus
 IF old = id THEN EXIT SUB
@@ -1490,6 +1573,7 @@ IF id > 0 THEN CtlRedraw id
 END SUB
 
 'Select one radio button of its group.
+'@api Controls | Select a radio button and clear the others of its group.
 SUB CtlSelect (id)
 FOR i = 1 TO HeapMax
         IF i <> id AND HKind(i) = KCtl AND HGet(i, CfKind) = CtlRadio AND HOwner(i) = HOwner(id) AND HGet(i, CfGrp) = HGet(id, CfGrp) THEN
@@ -1539,6 +1623,8 @@ IF HGet(id, CfKind) = CtlButton THEN
                         CtlRedraw id
                 END IF
         LOOP WHILE mouse.getbutton = LB
+        mouse.getpos mx, my
+        isin = (mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2)
         CtlDown = 0
         CtlRedraw id
         IF isin THEN CtlActivate id
@@ -1574,22 +1660,26 @@ CASE IS >= 32
 END SELECT
 END SUB
 
+'@api Controls | Set the text of a control and repaint it.
 SUB CtlSetText (id, t$)
 HText(id) = t$
 CtlRedraw id
 END SUB
 
+'@api Controls | The text of a control (the text box content, a caption).
 FUNCTION CtlGetText$ (id)
 CtlGetText$ = HText(id)
 END FUNCTION
 
 'Check or uncheck a checkbox or radio button. Use CtlSelect for a radio button
 'that must exclude the others of its group.
+'@api Controls | Check or uncheck a check box or radio button.
 SUB CtlSetChecked (id, v)
 IF v <> 0 THEN HSet id, CfChk, 1 ELSE HSet id, CfChk, 0
 CtlRedraw id
 END SUB
 
+'@api Controls | -1 when a check box or radio button is checked.
 FUNCTION CtlGetChecked (id)
 IF HGet(id, CfChk) <> 0 THEN CtlGetChecked = -1 ELSE CtlGetChecked = 0
 END FUNCTION

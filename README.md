@@ -96,10 +96,13 @@ An app module starts with a manifest line and holds its own procedures:
 | `timer` | `SUB (win, tag)` called when its `TimerSet` runs out |
 | `paint` | `SUB (win)` that declares immediate mode controls (below) |
 
-To add an app, write `apps/<name>.bas`, run the builder, and build. The apps
+The procedures an app can call and the callbacks it can have are in
+`docs/API.md`, generated from the `'@api` lines of the kernel. To add an app,
+write `apps/<name>.bas`, run the builder, and build. The apps
 are Hello (`apps/hello.bas`), Clock (`apps/clock.bas`, the system date and
-time, once a second) and Calc (`apps/calc.bas`, + - * / on doubles, its state
-in the window's data block).
+time, once a second), Calc (`apps/calc.bas`, + - * / on doubles, its state in
+the window's data block) and Notepad (`apps/notepad.bas`, ten lines, Save and
+Load, keys through `key=`).
 
 | Procedure | What |
 | --- | --- |
@@ -178,11 +181,11 @@ compares the dumps pixel by pixel on the host. A failing case writes
 idle machine. DOSBox sometimes crashes at start under Xvfb; the script runs the
 test again when that happens.
 
-The cases run as three programs (window, controls, heap, speed), and the test build
+The cases run as three programs (window, controls, heap, input, speed), and the test build
 leaves out the mouse library, the hit tests, the drag loops and the palette
 setup, to keep the test build inside QBasic's memory (code and arrays share
 about 160 KB). `scripts/test.sh` prints the memory left after the first paint,
-about 62 KB, and fails below 25 KB. A program stops starting at about 20 KB.
+about 54 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 ## Layout
 
@@ -195,6 +198,7 @@ about 62 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 | `scripts/test.sh`, `scripts/dosbox-run.sh` | Test runner and the DOSBox launcher it shares |
 | `scripts/screenshot.sh` | Screenshot of the program, from a video memory dump |
 | `scripts/fetch-docs.sh` | Downloads QBasic reference pages into `docs/qbasic/` (not committed) |
+| `docs/API.md` | The app API, generated from the kernel |
 | `docs/APPS-AND-API.md` | How apps and an API could work |
 | `flake.nix`, `nix/` | `nix run` package and test app |
 

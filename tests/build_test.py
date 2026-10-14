@@ -1,6 +1,6 @@
 """Splice the test code into SNUGGLE.BAS and print the result (LF line endings).
 
---cases <window|controls|heap|speed> picks the cases (the test code, the reference code
+--cases <window|controls|heap|input|speed> picks the cases (the test code, the reference code
 and the program share the 160 KB QBasic gives code and arrays, so the cases run
 as separate programs).
 With --smoke it prints SNUGGLE.BAS with a stop after the first paint instead; the
@@ -9,8 +9,8 @@ program writes the free memory (FRE(-1)) it has left at that point.
 The program under test is the real SNUGGLE.BAS. Three things change:
   - the run section ('@@RUN-BEGIN .. '@@RUN-END) becomes the test body,
   - the drawing layer ('@@GFX-BEGIN .. '@@GFX-END) becomes a counting layer,
-  - the hit tests, the drag loops and the palette setup are left out or stubbed
-    (the cases call the engine directly),
+  - the palette setup is left out (the hit tests and the drag loops stay: the
+    input group runs the main loop with a scripted mouse),
   - the mouse library ('@@MOUSE-BEGIN .. '@@MOUSE-END) becomes stubs: the test
     build needs the memory (see docs/APPS-AND-API.md), and the cases need no mouse,
   - the test globals, declares and subs are added.
@@ -59,8 +59,6 @@ if "--smoke" in sys.argv:
 out = swap(src, "RUN-BEGIN", "RUN-END", part("run_body.bas"))
 out = swap(out, "GFX-BEGIN", "GFX-END", part("gfx.bas"))
 out = swap(out, "MOUSE-BEGIN", "MOUSE-END", part("mouse_stub.bas"))
-out = swap(out, "HIT-BEGIN", "HIT-END", "")
-out = swap(out, "DRAG-BEGIN", "DRAG-END", "")
 out = swap(out, "INIT-BEGIN", "INIT-END", "SUB Init\nCoutSetup\nEND SUB\n")
 
 marker = "'***************\n"

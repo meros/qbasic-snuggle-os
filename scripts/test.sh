@@ -3,10 +3,11 @@
 #
 #   scripts/test.sh            smoke run of SNUGGLE.BAS, then the pixel and write-count cases
 #   TEST_TIMEOUT=300 ...       seconds a run may take (default 900)
+#   TEST_GROUPS=input ...      run only these groups (default: all)
 #
 # 1. smoke: SNUGGLE.BAS as shipped, stopped right after its first paint.
 # 2. cases: tests/*.bas spliced into SNUGGLE.BAS (tests/build_test.py), one program
-#    per group (window, controls, heap, speed). The cases
+#    per group (window, controls, heap, input, speed). The cases
 #    dump the screen planes (BSAVE) next to a reference image drawn with the 1999
 #    code; tests/verify.py compares the dumps pixel for pixel on the host.
 #
@@ -48,7 +49,7 @@ else
   exit 2
 fi
 
-groups="window controls heap speed"
+groups="${TEST_GROUPS:-window controls heap input speed}"
 total_fail=0
 for group in $groups; do
   echo "== cases: $group"
