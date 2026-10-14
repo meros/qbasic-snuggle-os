@@ -11,8 +11,9 @@ compiled into the desktop by a build script, against a small documented API of
 clipped redraw added on this branch is what makes that API small: an app only
 draws its own window and never has to think about other windows.
 
-Nothing in this note is built yet. The experiments below ran; the designs did
-not.
+Design A is built (see the README, "Apps and the heap"): app modules in
+`apps/`, joined into `SNUGGLE.BAS` by `scripts/build.py`. Designs B and C are
+not. The experiments below ran.
 
 ## What the environment allows
 

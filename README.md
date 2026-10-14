@@ -74,11 +74,30 @@ is repainted through the clip: 1.2 writes per pixel.
 
 ## Apps and the heap
 
-The desktop starts one instance of the Hello app at boot and shows an icon for
-it on the background. A click on the icon starts another instance
-(`AppLaunch`). An app is a set of procedures with a number, in the `'@@APP`
-block of `SNUGGLE.BAS`. It is added by hand for now: `IconAdd` and a start
-procedure in `AppStartAll`/`AppLaunch`, and a case in `AppEvent`.
+`SNUGGLE.BAS` is built from the kernel (`src/kernel.bas`) and one file per app
+(`apps/*.bas`) by `python3 scripts/build.py`. The built file is committed
+because QBasic, the Docker image and `nix run` all want one file; the tests fail
+when it is out of date. The desktop starts one Hello instance at boot and shows
+an icon for each app. A click on an icon starts another instance (`AppLaunch`).
+
+An app module starts with a manifest line and holds its own procedures:
+
+```
+'@app id=2 name=Clock start=ClockStart timer=ClockTimer
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id` | app number, unique; the builder adds `CONST AppId<Name>` |
+| `name` | label of the desktop icon |
+| `boot` | start one instance when the desktop starts |
+| `start` | `SUB` that makes an instance with `AppWindow` |
+| `event` | `SUB (win, ctl)` called for a control event of its windows |
+| `timer` | `SUB (win, tag)` called when its `TimerSet` runs out |
+
+To add an app, write `apps/<name>.bas`, run the builder, and build. The apps
+are Hello (`apps/hello.bas`) and Clock (`apps/clock.bas`, the system date and
+time, once a second).
 
 | Procedure | What |
 | --- | --- |
@@ -143,7 +162,9 @@ about 86 KB, and fails below 25 KB. A program stops starting at about 20 KB.
 
 | Path | What |
 | --- | --- |
-| `SNUGGLE.BAS` | The program. `'@@RUN-BEGIN` and `'@@GFX-BEGIN` mark the parts the tests replace. |
+| `SNUGGLE.BAS` | The program, generated: do not edit. `'@@RUN-BEGIN` and `'@@GFX-BEGIN` mark the parts the tests replace. |
+| `src/kernel.bas` | The kernel: windows, controls, heap, timers, repaint |
+| `apps/` | One module per app, joined into `SNUGGLE.BAS` by `scripts/build.py` |
 | `tests/` | Test cases, reference code, counting drawing layer, builder and verifier |
 | `scripts/test.sh`, `scripts/dosbox-run.sh` | Test runner and the DOSBox launcher it shares |
 | `scripts/screenshot.sh` | Screenshot of the program, from a video memory dump |

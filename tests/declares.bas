@@ -1,1 +1,1 @@
-DECLARE SUB TimerCase ()
+DECLARE SUB ClockCase ()

@@ -22,6 +22,9 @@ mkdir -p "$build"
 rm -f "$build"/RESULT.TXT "$build"/SMOKE.TXT "$build"/S*.BIN "$build"/diff_*.png
 unzip -oq "$root/qb11.zip" QBASIC.EXE -d "$build"
 
+# SNUGGLE.BAS is built from src/kernel.bas and apps/*.bas: it must be current.
+python3 -I "$root/scripts/build.py" --check
+
 python3 -I "$root/tests/build_test.py" --smoke > "$build/SMOKE.BAS"
 
 . "$root/scripts/dosbox-run.sh"

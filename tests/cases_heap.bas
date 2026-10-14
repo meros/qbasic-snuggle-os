@@ -3,6 +3,7 @@ SUB RunAll
 HeapCase
 OomCase
 TimerCase
+ClockCase
 END SUB
 
 SUB HeapCase
@@ -133,4 +134,44 @@ FOR i = 1 TO 8
         IF TmUsed(i) THEN used = used + 1
 NEXT
 Check "timer: closing a window drops its timers", used = 0, STR$(used)
+END SUB
+
+'The clock app: one window with the date and the time, kept up by its timer.
+SUB ClockCase
+Scene 1
+RepaintRect 0, 0, 639, 479
+n = WNumber
+AppLaunch AppIdClock
+w = WNew
+Check "clock: a launch makes one window", WNumber = n + 1 AND HKind(w) = KWin AND HGet(w, WfApp) = AppIdClock, STR$(WNumber)
+t$ = CtlGetText$(AppGet(w, ClockTime))
+Check "clock: it shows a time, hh:mm:ss", LEN(t$) = 8 AND MID$(t$, 3, 1) = ":" AND MID$(t$, 6, 1) = ":", t$
+d$ = CtlGetText$(AppGet(w, ClockDate))
+Check "clock: it shows a date, yyyy-mm-dd", LEN(d$) = 10 AND MID$(d$, 5, 1) = "-" AND MID$(d$, 8, 1) = "-", d$
+armed = 0
+FOR i = 1 TO 16
+        IF TmUsed(i) AND TmApp(i) = AppIdClock AND TmWin(i) = w THEN armed = armed + 1
+NEXT
+Check "clock: one timer is armed for it", armed = 1, STR$(armed)
+CtlSetText AppGet(w, ClockTime), "00:00:00"
+TimerSet AppIdClock, w, 1, 0
+TimersRun
+t$ = CtlGetText$(AppGet(w, ClockTime))
+Check "clock: the callback sets the time again", LEN(t$) = 8 AND t$ <> "00:00:00", t$
+armed = 0
+FOR i = 1 TO 16
+        IF TmUsed(i) AND TmApp(i) = AppIdClock AND TmWin(i) = w THEN armed = armed + 1
+NEXT
+Check "clock: and arms the next tick", armed = 1, STR$(armed)
+CompareToLegacy "clock: the window is painted and updated"
+'A control that hangs over the screen edge can be redrawn (it did raise error 5).
+WinMoveTo w, 600, 100
+CtlSetText AppGet(w, ClockTime), "11:11:11"
+CompareToLegacy "clock: a label partly off screen changes text"
+WinClose w
+armed = 0
+FOR i = 1 TO 16
+        IF TmUsed(i) THEN armed = armed + 1
+NEXT
+Check "clock: closing it drops the timer", armed = 0, STR$(armed)
 END SUB
