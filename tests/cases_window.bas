@@ -144,8 +144,17 @@ WinMoveTo 3, 250, 380
 CompareToLegacy "dock: a window moved under it stays below"
 MsClear
 MsAdd DockCx(1), 450, 0
+gWrites = 0
 MainStep
+hoverW& = gWrites
+Metric "dock hover step writes", CSNG(hoverW&)
 Check "dock: the icon under the pointer is enlarged, its neighbour less", DockSize(1) >= DockBase + DockExtra - 2 AND DockSize(2) > DockBase AND DockSize(2) < DockSize(1), STR$(DockSize(1)) + STR$(DockSize(2))
+DockZone zx1, zy1, zx2, zy2
+gWrites = 0
+RepaintRect zx1, zy1, zx2, zy2
+fullW& = gWrites
+Metric "dock whole zone repaint writes", CSNG(fullW&)
+Check "dock: a hover step writes less than repainting the whole zone", hoverW& < fullW&, STR$(hoverW&) + STR$(fullW&)
 CompareToLegacy "dock: enlarged under the pointer"
 Check "dock: a point over the enlarged icon finds it", DockAt(DockCx(1), 430) = 1, STR$(DockAt(DockCx(1), 430))
 MsClear

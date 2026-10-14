@@ -99,6 +99,7 @@ DIM SHARED MouseAsm AS STRING    'machine code for the mouse driver call
 DIM SHARED MouseOK AS INTEGER
 DIM SHARED MouseVis AS INTEGER
 CONST DockBase = 32, DockExtra = 24, DockSlot = 48, DockBar = 52, DockReach = 72
+DIM SHARED DkOld(7) AS INTEGER
 DIM SHARED DockHover AS INTEGER         'the dock: where the pointer is over it (a multiple of 4), -1 for none
 DIM SHARED IconApp(7) AS INTEGER        'dock icons: the app they start, their name
 DIM SHARED IconText(7) AS STRING
@@ -1569,22 +1570,44 @@ FOR s = DockBase TO DockBase + DockExtra
 NEXT
 END SUB
 
-'The pointer moved with no button down: enlarge the icons near it, and repaint
-'the dock when the sizes changed.
+'The pointer moved with no button down: enlarge the icons near it. Only the
+'icons whose size changed are repainted, and the bar under them is drawn over
+'without repainting the windows below it (the bar covers them): above the bar
+'the windows and the desktop come back where an icon shrank.
 SUB DockMove
 IF IconCount = 0 THEN EXIT SUB
 mouse.getpos mx, my
 h = -1
-DockZone zx1, zy1, zx2, zy2
-IF my >= 479 - DockBar - DockExtra - 22 AND mx >= zx1 AND mx <= zx2 THEN
+IF my >= 479 - DockBar - DockExtra - 22 THEN
         FOR i = 1 TO IconCount
-                IF ABS(DockCx(i) - mx) < DockReach THEN h = (mx \ 4) * 4
+                IF ABS(DockCx(i) - mx) < DockReach THEN h = (mx \ 6) * 6
         NEXT
 END IF
-IF h <> DockHover THEN
-        DockHover = h
-        Repaint zx1, zy1, zx2, zy2
-END IF
+IF h = DockHover THEN EXIT SUB
+FOR i = 1 TO IconCount
+        DkOld(i) = DockSize(i)
+NEXT
+DockHover = h
+first = 0
+FOR i = 1 TO IconCount
+        IF DockSize(i) <> DkOld(i) THEN
+                IF first = 0 THEN first = i
+                last = i
+        END IF
+NEXT
+IF first = 0 THEN EXIT SUB
+x1 = DockCx(first) - DockSlot
+x2 = DockCx(last) + DockSlot
+IF x1 < 0 THEN x1 = 0
+IF x2 > 639 THEN x2 = 639
+top = 479 - DockBar - DockExtra - 22
+mouse.hide
+WaitRetrace
+RepaintRect x1, top, x2, 479 - DockBar - 1
+ClipOn x1, 479 - DockBar, x2, 479
+DockDraw
+ClipOff
+mouse.show
 END SUB
 
 'Fill a free part of the background.
