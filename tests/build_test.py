@@ -21,7 +21,23 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
 tests = root / "tests"
-src = (root / "SNUGGLE.BAS").read_text().replace("\r\n", "\n")
+import importlib.util
+
+_spec = importlib.util.spec_from_file_location("snuggle_build", root / "scripts" / "build.py")
+_build = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_build)
+
+# The apps each group needs (the whole program does not fit in QBasic's memory
+# together with the test code). The smoke and screenshot builds use all of them.
+GROUP_APPS = {
+    "window": ["hello"], "controls": ["hello"], "heap": ["hello"], "speed": ["hello"],
+    "apps": ["clock", "calc", "flappy"], "input": ["hello", "calc", "notepad"],
+}
+_group = sys.argv[sys.argv.index("--cases") + 1] if "--cases" in sys.argv else None
+if _group in GROUP_APPS:
+    src = _build.build_text(GROUP_APPS[_group])
+else:
+    src = _build.build_text()
 
 
 def part(name):

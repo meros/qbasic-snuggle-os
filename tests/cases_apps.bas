@@ -167,6 +167,19 @@ WinInvalidate w
 Metric "flappy full repaint writes", CSNG(gWrites)
 Check "flappy: a tick writes under a tenth of a full repaint", tickW& * 10 < gWrites, STR$(tickW&) + STR$(gWrites)
 CompareToLegacy "flappy: the window during a round"
+'A window in front is not erased and drawn again when the game behind it moves.
+AppLaunch AppIdCalc
+cw = WNew
+WinRect w, fx1, fy1, fx2, fy2
+WinMoveTo cw, fx1 + 20, fy1 + 60
+FlappyTimer w, 1
+gWrites = 0
+FlappyTimer w, 1
+behindW& = gWrites
+Metric "flappy tick behind calc writes", CSNG(behindW&)
+Check "flappy: a tick behind another window repaints none of it", behindW& <= tickW& + 100, STR$(behindW&) + STR$(tickW&)
+CompareToLegacy "flappy: the game behind the calculator"
+WinClose cw
 WinClose w
 NoSync = 0
 END SUB

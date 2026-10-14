@@ -7,15 +7,15 @@ IconCount = 0
 AppStartAll
 RepaintRect 0, 0, 639, 479
 hello = WOrder(1)
-Check "input: the desktop starts one Hello window and five icons", WNumber = 1 AND HGet(hello, WfApp) = AppIdHello AND IconCount = 5, STR$(WNumber) + STR$(IconCount)
+Check "input: the desktop starts one Hello window and three icons", WNumber = 1 AND HGet(hello, WfApp) = AppIdHello AND IconCount = 3, STR$(WNumber) + STR$(IconCount)
 CompareToLegacy "input: the desktop at start"
 
 'An icon starts an instance; windows cascade.
-ClickIcon 3
+ClickIcon AppIdCalc
 calc = WOrder(1)
 Check "input: the Calc icon starts Calc in front", WNumber = 2 AND HGet(calc, WfApp) = AppIdCalc, STR$(WNumber)
 CompareToLegacy "input: calc launched by its icon"
-ClickIcon 3
+ClickIcon AppIdCalc
 Check "input: a second click starts a second instance", WNumber = 3, STR$(WNumber)
 extra = WOrder(1)
 WinClose extra
@@ -92,7 +92,7 @@ Check "input: a click on OK greets the name", CtlGetText$(AppGet(hello, HelloMsg
 CompareToLegacy "input: hello after OK"
 
 'Notepad: keys, arrows, save, load.
-ClickIcon 4
+ClickIcon AppIdNotepad
 np = WOrder(1)
 Check "input: the Notepad icon starts Notepad", HGet(np, WfApp) = AppIdNotepad, ""
 Typ "hi" + CHR$(13) + "xq"
@@ -123,9 +123,11 @@ WinReset
 IconCount = 0
 END SUB
 
-'The icon i (1 to 4) of the desktop, clicked.
-SUB ClickIcon (i)
-Click IconX(i) + 10, IconY(i) + 10
+'The icon of an app on the desktop, clicked.
+SUB ClickIcon (app)
+FOR i = 1 TO IconCount
+        IF IconApp(i) = app THEN Click IconX(i) + 10, IconY(i) + 10
+NEXT
 END SUB
 
 'Click the title bar button b of a window: 1 close, 2 maximise, 3 roll up.

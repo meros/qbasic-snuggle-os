@@ -34,6 +34,10 @@ QBASIC /RUN $bas
 exit
 CONF
 cd "$build"
+# DOSBox 0.74 segfaults at start now and then under Xvfb, and the runner starts
+# it again. Do not let each crash become a core dump: systemd-coredump reads,
+# compresses and writes every one of them, which is what bogs the machine down.
+ulimit -c 0
 SDL_AUDIODRIVER=dummy timeout "$limit" dosbox -conf "$build/dosbox.conf" -noconsole >"$build/dosbox.log" 2>&1 &
 pid=$!
 last=-1
@@ -43,11 +47,11 @@ for n in $(seq 1 "$limit"); do
   kill -0 $pid 2>/dev/null || break
   grep -q "$pattern" "$build/$marker" 2>/dev/null && break
   # The program writes its marker file in the first seconds and adds to it as it
-  # goes. No growth for 60 s means DOSBox stalled, or QBasic stopped on an error:
+  # goes. No growth for 120 s means DOSBox stalled, or QBasic stopped on an error:
   # do not wait for the limit.
   size=$(stat -c %s "$build/$marker" 2>/dev/null || echo 0)
   if [ "$size" != "$last" ]; then last=$size; since=$SECONDS; fi
-  if [ $((SECONDS - since)) -ge 60 ]; then stalled=1; break; fi
+  if [ $((SECONDS - since)) -ge 120 ]; then stalled=1; break; fi
   sleep 1
 done
 kill $pid 2>/dev/null || true

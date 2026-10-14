@@ -57,6 +57,7 @@ DIM SHARED UiDown AS INTEGER            'mode 0: the button that looks pressed, 
 DIM SHARED UiClickId AS INTEGER         'mode 2: the button that was clicked
 DIM SHARED ClientOpaque AS INTEGER      'WinDrwBrd leaves the client area alone: the app paints all of it
 DIM SHARED DirtyN AS INTEGER            'rectangles an app marked for repaint (WinDirty), screen coordinates
+DIM SHARED DirtyWin(8) AS INTEGER
 DIM SHARED DirtyX1(8) AS INTEGER
 DIM SHARED DirtyY1(8) AS INTEGER
 DIM SHARED DirtyX2(8) AS INTEGER
@@ -265,7 +266,7 @@ END SUB
 '@api Windows | Repaint the client area of a window after the app changed what it shows.
 SUB WinInvalidate (who)
 WinRect who, x1, y1, x2, y2
-Repaint x1, y1 + TtlHeight + 1, x2, y2
+RepaintOwn who, x1, y1 + TtlHeight + 1, x2, y2
 END SUB
 
 'Mark a rectangle of the client area (x, y, w, h relative to it) as changed. WinFlush
@@ -286,6 +287,7 @@ IF y2 > wy + wh - 3 THEN y2 = wy + wh - 3
 IF x1 > x2 OR y1 > y2 OR state = 0 THEN EXIT SUB
 IF DirtyN >= 8 THEN WinFlush
 DirtyN = DirtyN + 1
+DirtyWin(DirtyN) = who
 DirtyX1(DirtyN) = x1
 DirtyY1(DirtyN) = y1
 DirtyX2(DirtyN) = x2
@@ -298,7 +300,7 @@ IF DirtyN = 0 THEN EXIT SUB
 mouse.hide
 WaitRetrace
 FOR i = 1 TO DirtyN
-        RepaintRect DirtyX1(i), DirtyY1(i), DirtyX2(i), DirtyY2(i)
+        RepaintWin DirtyWin(i), DirtyX1(i), DirtyY1(i), DirtyX2(i), DirtyY2(i)
 NEXT
 DirtyN = 0
 mouse.show
@@ -919,6 +921,14 @@ RepaintRect x1, y1, x2, y2
 mouse.show
 END SUB
 
+'The same for a rectangle of one window (see RepaintWin).
+SUB RepaintOwn (who, x1, y1, x2, y2)
+mouse.hide
+WaitRetrace
+RepaintWin who, x1, y1, x2, y2
+mouse.show
+END SUB
+
 SUB refresh
 Repaint 0, 0, 639, 479
 END SUB
@@ -1163,6 +1173,20 @@ END SUB
 'that is still free, then that part is taken off the list. What is left at the
 'end is background. No pixel is written twice, so nothing is erased and redrawn.
 SUB RepaintRect (px1, py1, px2, py2)
+PaintRects 0, px1, py1, px2, py2
+END SUB
+
+'Paint a rectangle of one window only: the parts of it that a window in front
+'covers are left alone, and nothing else is repainted. For what an app changed in
+'its own window, so a window over it is not erased and drawn again.
+SUB RepaintWin (who, px1, py1, px2, py2)
+PaintRects who, px1, py1, px2, py2
+END SUB
+
+'The work of both: only = 0 paints every window and the background, otherwise
+'the windows in front of window only take their part off the list unpainted,
+'only is painted, and the windows behind it and the background are not.
+SUB PaintRects (only, px1, py1, px2, py2)
 rx1 = px1: ry1 = py1: rx2 = px2: ry2 = py2
 IF rx1 < 0 THEN rx1 = 0
 IF ry1 < 0 THEN ry1 = 0
@@ -1178,6 +1202,7 @@ FOR Cyc = 1 TO WNumber
         IF n = 0 THEN EXIT FOR
         CW = WOrder(Cyc)
         WinRect CW, wx1, wy1, wx2, wy2
+        drawit = (only = 0 OR CW = only)
         m = 0
         d = 1 - c
         FOR i = 1 TO n
@@ -1190,9 +1215,11 @@ FOR Cyc = 1 TO WNumber
                         m = m + 1
                         RPut d, m, fx1, fy1, fx2, fy2
                 ELSE
-                        ClipOn ix1, iy1, ix2, iy2
-                        WinDrwMng CW
-                        ClipOff
+                        IF drawit THEN
+                                ClipOn ix1, iy1, ix2, iy2
+                                WinDrwMng CW
+                                ClipOff
+                        END IF
                         IF fy1 < iy1 THEN m = m + 1: RPut d, m, fx1, fy1, fx2, iy1 - 1
                         IF iy2 < fy2 THEN m = m + 1: RPut d, m, fx1, iy2 + 1, fx2, fy2
                         IF fx1 < ix1 THEN m = m + 1: RPut d, m, fx1, iy1, ix1 - 1, iy2
@@ -1201,11 +1228,14 @@ FOR Cyc = 1 TO WNumber
         NEXT
         n = m
         c = d
+        IF only <> 0 AND CW = only THEN n = 0
 NEXT
 
-FOR i = 1 TO n
-        DeskFill RL(c, i, 1), RL(c, i, 2), RL(c, i, 3), RL(c, i, 4)
-NEXT
+IF only = 0 THEN
+        FOR i = 1 TO n
+                DeskFill RL(c, i, 1), RL(c, i, 2), RL(c, i, 3), RL(c, i, 4)
+        NEXT
+END IF
 END SUB
 
 'A list that is full drops the rectangle: part of the area stays unpainted, but
@@ -1577,7 +1607,7 @@ FOR Cyc = 1 TO WNumber
         END IF
 NEXT
 IF covered THEN
-        RepaintChange x1, y1, x2, y2, x1, y1, x2, y2
+        RepaintOwn HOwner(id), x1, y1, x2, y2
 ELSE
         'Nothing in front: the client background, then the controls of this
         'window that touch the rectangle, in the order they were added.

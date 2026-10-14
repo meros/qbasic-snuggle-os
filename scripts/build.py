@@ -208,12 +208,22 @@ def api_doc():
     return ("\n".join(out).rstrip("\n") + "\n").encode("ascii")
 
 
-def build():
+def build_text(only=None):
+    """The program as text with LF line endings. only is a list of app file
+    names (without .bas) for the tests, which build a program with the apps a
+    group needs: QBasic's memory does not hold the kernel, the test code and
+    every app together."""
     kernel = (root / "src" / "kernel.bas").read_text().replace("\r\n", "\n")
     if kernel.count("'@@APPS-HERE\n") != 1:
         sys.exit("build: '@@APPS-HERE not found exactly once in src/kernel.bas")
-    text = HEADER + kernel.replace("'@@APPS-HERE\n", generated(apps()))
-    return text.replace("\n", "\r\n").encode("ascii")
+    found = apps()
+    if only is not None:
+        found = [a for a in found if a["file"][:-4] in only]
+    return HEADER + kernel.replace("'@@APPS-HERE\n", generated(found))
+
+
+def build():
+    return build_text().replace("\n", "\r\n").encode("ascii")
 
 
 if __name__ == "__main__":
