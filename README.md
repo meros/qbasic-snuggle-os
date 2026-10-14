@@ -94,6 +94,7 @@ An app module starts with a manifest line and holds its own procedures:
 | `start` | `SUB` that makes an instance with `AppWindow` |
 | `event` | `SUB (win, ctl)` called for a control event of its windows |
 | `timer` | `SUB (win, tag)` called when its `TimerSet` runs out |
+| `paint` | `SUB (win)` that declares immediate mode controls (below) |
 
 To add an app, write `apps/<name>.bas`, run the builder, and build. The apps
 are Hello (`apps/hello.bas`), Clock (`apps/clock.bas`, the system date and
@@ -116,6 +117,30 @@ window owns itself, its controls and its data, and closing the window frees them
 all. `MemAlloc(owner, kind, words)` returns a handle, or 0 and `OomFlag` when
 the heap or the 63 handles are full. A launch that runs out of memory closes
 what it made and shows a notice on the bottom bar.
+
+### Immediate mode controls
+
+A retained control (`CtlAdd`) is a heap block with a handle. A button or label
+that has no state of its own does not need one. An app with a `paint=`
+procedure declares such controls every time its window is painted:
+
+```
+SUB CalcPaint (w)
+IF UiButton(0, 8, 32, 40, 28, "7") THEN CalcKey w, "7"
+UiLabel 8, 6, 176, 16, "Total"
+END SUB
+```
+
+`UiButton(id, x, y, w, h, caption$)` draws the button, and the kernel runs the
+same procedure again to find a click: the button looks pressed while the pointer
+is on it, and `UiButton` returns -1 for the clicked id when the mouse button
+goes up on it. Nothing is stored: no block, no handle, no control number. The
+state is what the app keeps in its data block, and the client area is repainted
+after a click. Retained controls remain for what has state (text boxes, check
+boxes, radio buttons, anything that holds text). Coordinates are relative to
+the client area; a control that does not fit is neither drawn nor hit. The
+calculator's 17 keys are immediate: without them it holds 3 heap blocks instead
+of 20.
 
 ## Controls
 

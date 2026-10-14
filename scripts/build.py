@@ -14,6 +14,9 @@ An app module is one .bas file whose first line is its manifest:
   start  SUB called to make an instance (it makes its windows with AppWindow)
   event  SUB (win, ctl) called for a control event of the app's windows
   timer  SUB (win, tag) called when a TimerSet of the app runs out
+  paint  SUB (win) called each time a window of the app is painted and, in
+         another mode, to find a click: it declares immediate mode controls
+         with UiButton and UiLabel, which cost no heap (see the README)
 
 The builder adds a constant AppId<Name> for each app, and the procedures the
 kernel calls: AppStartAll (icons and boot instances), AppRun, AppEvent and
@@ -93,6 +96,16 @@ def generated(found):
         if "timer" in a:
             out.append("CASE AppId%s" % a["name"])
             out.append("        %s win, tag" % a["timer"])
+    out.append("END SELECT")
+    out.append("END SUB")
+    out.append("")
+    out.append("'Run the immediate mode controls of an app's window (UiButton, UiLabel).")
+    out.append("SUB AppPaint (app, win)")
+    out.append("SELECT CASE app")
+    for a in found:
+        if "paint" in a:
+            out.append("CASE AppId%s" % a["name"])
+            out.append("        %s win" % a["paint"])
     out.append("END SELECT")
     out.append("END SUB")
     out.append("")

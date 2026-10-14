@@ -39,6 +39,21 @@ DIM SHARED TmWin(16) AS INTEGER
 DIM SHARED TmTag(16) AS INTEGER
 DIM SHARED TmStart(16) AS SINGLE
 DIM SHARED TmDur(16) AS SINGLE
+DIM SHARED UiMode AS INTEGER            'immediate mode controls: 0 draw, 1 find the one under the pointer, 2 click
+DIM SHARED UiWin AS INTEGER             'the window being painted or probed, its client area, the pointer
+DIM SHARED UiOx AS INTEGER
+DIM SHARED UiOy AS INTEGER
+DIM SHARED UiRight AS INTEGER
+DIM SHARED UiBottom AS INTEGER
+DIM SHARED UiMx AS INTEGER
+DIM SHARED UiMy AS INTEGER
+DIM SHARED UiHitId AS INTEGER           'mode 1: the button under the pointer and where it is
+DIM SHARED UiHx1 AS INTEGER
+DIM SHARED UiHy1 AS INTEGER
+DIM SHARED UiHx2 AS INTEGER
+DIM SHARED UiHy2 AS INTEGER
+DIM SHARED UiDown AS INTEGER            'mode 0: the button that looks pressed, 0 for none
+DIM SHARED UiClickId AS INTEGER         'mode 2: the button that was clicked
 DIM SHARED OomFlag AS INTEGER           '-1 when a block could not be had, set by MemAlloc
 DIM SHARED WNumber AS INTEGER           'windows in WOrder, front first
 DIM SHARED WNew AS INTEGER              'the window NewWin made last, 0 when it could not
@@ -125,8 +140,8 @@ CASE 8
                 CtlTrack cid
         ELSE
                 CtlSetFocus 0
-                DO: LOOP WHILE mouse.getbutton = LB
                 WinPutTop CW
+                IF UiClick(CW, cmx, cmy) = 0 THEN DO: LOOP WHILE mouse.getbutton = LB
         END IF
 END SELECT
 IF part <> 0 THEN hit = -1: EXIT FOR
@@ -457,6 +472,115 @@ TimerSet 0, 0, 1, 4
 END SUB
 
 '---------------------------------------------------------------------------
+'Immediate mode controls. A button or label of an app that has a paint
+'procedure (manifest paint=) is not stored anywhere: the app declares it each
+'time its window is painted, with UiButton and UiLabel, and the kernel runs the
+'same procedure to find a click. So they cost no heap and no handles, and their
+'state is whatever the app keeps in its data block. A button id is a number the
+'app chooses; it is unique in the procedure.
+'  mode 0 draws, mode 1 finds the button under the pointer, mode 2 returns -1
+'  for the button that was clicked, and the app does the work in its IF.
+'---------------------------------------------------------------------------
+'Run the app's paint procedure for a window in a mode.
+SUB UiRun (who, md)
+oldmode = UiMode
+oldwin = UiWin
+UiMode = md
+UiWin = who
+GetStats who, crap$, x, y, w, h, state
+UiOx = x + 3
+UiOy = y + TtlHeight + 4
+UiRight = x + w - 3
+UiBottom = y + h - 3
+AppPaint HGet(who, WfApp), who
+UiMode = oldmode
+UiWin = oldwin
+END SUB
+
+'Called when a window's content is painted, inside the clip.
+SUB UiPaint (who)
+UiRun who, 0
+END SUB
+
+'A push button at x, y (relative to the client area). In mode 2 it returns -1
+'when it is the clicked one. A button that does not fit in the client area is
+'neither drawn nor hit, as for retained controls.
+FUNCTION UiButton (id, x, y, w, h, cap$)
+UiButton = 0
+x1 = UiOx + x
+y1 = UiOy + y
+x2 = x1 + w - 1
+y2 = y1 + h - 1
+IF x1 < UiOx OR y1 < UiOy OR x2 > UiRight OR y2 > UiBottom THEN EXIT FUNCTION
+SELECT CASE UiMode
+CASE 0
+        IF NOT Outside(x1, y1, x2, y2) THEN DrawPush x1, y1, x2, y2, cap$, (UiDown = id)
+CASE 1
+        IF UiMx >= x1 AND UiMx <= x2 AND UiMy >= y1 AND UiMy <= y2 THEN
+                UiHitId = id
+                UiHx1 = x1: UiHy1 = y1: UiHx2 = x2: UiHy2 = y2
+        END IF
+CASE 2
+        IF id = UiClickId THEN UiButton = -1
+END SELECT
+END FUNCTION
+
+'Text in black on the client background (drawing only).
+SUB UiLabel (x, y, w, h, t$)
+IF UiMode <> 0 THEN EXIT SUB
+x1 = UiOx + x
+y1 = UiOy + y
+IF x1 < UiOx OR y1 < UiOy OR x1 + w - 1 > UiRight OR y1 + h - 1 > UiBottom THEN EXIT SUB
+CtlCap t$, x1, y1 + (h - 16) \ 2 - 1, w, 15
+END SUB
+
+SUB UiRepaint (x1, y1, x2, y2)
+mouse.hide
+WaitRetrace
+RepaintRect x1, y1, x2, y2
+mouse.show
+END SUB
+
+'Click a button by its id: the app's procedure runs in mode 2, then the client
+'area is repainted, since the app may have changed what it shows.
+SUB UiFire (who, id)
+UiClickId = id
+UiRun who, 2
+UiClickId = 0
+WinRect who, x1, y1, x2, y2
+UiRepaint x1, y1 + TtlHeight + 1, x2, y2
+END SUB
+
+'A click at a screen point in a window. Returns -1 when an immediate button
+'took it: it looks pressed while the pointer is on it, and counts when the
+'button goes up on it.
+FUNCTION UiClick (who, mx, my)
+UiClick = 0
+UiMx = mx
+UiMy = my
+UiHitId = 0
+UiRun who, 1
+IF UiHitId = 0 THEN EXIT FUNCTION
+UiClick = -1
+id = UiHitId
+x1 = UiHx1: y1 = UiHy1: x2 = UiHx2: y2 = UiHy2
+UiDown = id
+UiRepaint x1, y1, x2, y2
+isin = -1
+DO
+        mouse.getpos mx, my
+        over = (mx >= x1 AND mx <= x2 AND my >= y1 AND my <= y2)
+        IF over <> isin THEN
+                isin = over
+                IF isin THEN UiDown = id ELSE UiDown = 0
+                UiRepaint x1, y1, x2, y2
+        END IF
+LOOP WHILE mouse.getbutton = LB
+UiDown = 0
+IF isin THEN UiFire who, id ELSE UiRepaint x1, y1, x2, y2
+END FUNCTION
+
+'---------------------------------------------------------------------------
 'Timers. TimerSet(app, win, tag, seconds) makes the kernel call back once, when
 'the time is up, from the main loop (TimersRun): the kernel for app 0, else
 'AppTimer app, win, tag. The same app, window and tag set again starts over.
@@ -737,7 +861,10 @@ END SUB
 SUB WinDrwMng (who)
 GetStats who, text$, x, y, w, h, state
 WinDrw text$, x, y, w, h, state
-IF state <> 0 THEN CtlDrawAll who
+IF state <> 0 THEN
+        CtlDrawAll who
+        UiPaint who
+END IF
 END SUB
 
 SUB WinDrwTtl (x1, y1, x2, y2)
@@ -1222,15 +1349,7 @@ SELECT CASE HGet(id, CfKind)
 CASE CtlLabel
         CtlCap cap$, x1, ty, w, 15
 CASE CtlButton
-        nudge = 0
-        IF CtlDown = id THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
-        gFill x1 + 2, y1 + 2, x2 - 2, y2 - 2, 3
-        gLine x1 + 1, y1 + 1, x2 - 2, y1 + 1, hi
-        gLine x1 + 1, y1 + 2, x1 + 1, y2 - 2, hi
-        gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
-        gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
-        gBox x1, y1, x2, y2, 1
-        CtlCap cap$, x1 + (w - LEN(cap$) * 8) \ 2 + nudge, ty + nudge, w, 3
+        DrawPush x1, y1, x2, y2, cap$, (CtlDown = id)
 CASE CtlCheck
         bx = y1 + (h - 13) \ 2
         gBox x1, bx, x1 + 12, bx + 12, 1
@@ -1262,6 +1381,22 @@ CASE CtlText
                 gLine cx, y1 + 3, cx, y2 - 3, 0
         END IF
 END SELECT
+END SUB
+
+'A push button in a rectangle, up or down. Retained buttons (CtlDraw) and
+'immediate ones (UiButton) both come here.
+SUB DrawPush (x1, y1, x2, y2, cap$, down)
+nudge = 0
+IF down THEN hi = 2: lo = 15: nudge = 1 ELSE hi = 15: lo = 2
+gFill x1 + 2, y1 + 2, x2 - 2, y2 - 2, 3
+gLine x1 + 1, y1 + 1, x2 - 2, y1 + 1, hi
+gLine x1 + 1, y1 + 2, x1 + 1, y2 - 2, hi
+gLine x1 + 1, y2 - 1, x2 - 1, y2 - 1, lo
+gLine x2 - 1, y1 + 1, x2 - 1, y2 - 2, lo
+gBox x1, y1, x2, y2, 1
+w = x2 - x1 + 1
+h = y2 - y1 + 1
+CtlCap cap$, x1 + (w - LEN(cap$) * 8) \ 2 + nudge, y1 + (h - 16) \ 2 - 1 + nudge, w, 3
 END SUB
 
 'Control text in black on the background bg.

@@ -1,8 +1,9 @@
-'@app id=3 name=Calc start=CalcStart event=CalcEvent
+'@app id=3 name=Calc start=CalcStart paint=CalcPaint
 'Calculator: digits, a decimal point, + - * / and =. An operator key finishes
-'the pending operation, so 5 + 3 + shows 8. Data words: the accumulator (a
-'double kept in four words), the pending operator (its character code), 1 when
-'the next digit starts a new number, and the display label.
+'the pending operation, so 5 + 3 + shows 8. The keys are immediate mode buttons
+'(CalcPaint), so they take no heap. Data words: the accumulator (a double kept
+'in four words), the pending operator (its character code), 1 when the next
+'digit starts a new number, and the display label.
 CONST CalcAcc = 0, CalcOp = 4, CalcFresh = 5, CalcDisp = 6
 
 FUNCTION CalcGet# (w)
@@ -34,15 +35,19 @@ n = (WNumber MOD 6) * 24
 w = AppWindow(AppIdCalc, "Calculator", 60 + n, 120 + n, 198, 230, 7)
 AppSet w, CalcFresh, 1
 AppSet w, CalcDisp, CtlAdd(w, CtlLabel, 8, 6, 176, 16, "0")
-keys$ = "789/456*123-0.=+"
-FOR i = 0 TO 15
-        dummy = CtlAdd(w, CtlButton, 8 + (i MOD 4) * 44, 32 + (i \ 4) * 34, 40, 28, MID$(keys$, i + 1, 1))
-NEXT
-dummy = CtlAdd(w, CtlButton, 8, 168, 84, 28, "C")
 END SUB
 
-SUB CalcEvent (w, ctl)
-k$ = CtlGetText$(ctl)
+'The keys. Button ids are 0 to 15 for the grid and 16 for C.
+SUB CalcPaint (w)
+keys$ = "789/456*123-0.=+"
+FOR i = 0 TO 15
+        k$ = MID$(keys$, i + 1, 1)
+        IF UiButton(i, 8 + (i MOD 4) * 44, 32 + (i \ 4) * 34, 40, 28, k$) THEN CalcKey w, k$
+NEXT
+IF UiButton(16, 8, 168, 84, 28, "C") THEN CalcKey w, "C"
+END SUB
+
+SUB CalcKey (w, k$)
 disp = AppGet(w, CalcDisp)
 cur$ = CtlGetText$(disp)
 fresh = AppGet(w, CalcFresh)
