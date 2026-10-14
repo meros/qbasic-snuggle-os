@@ -78,7 +78,9 @@ is repainted through the clip: 1.2 writes per pixel.
 (`apps/*.bas`) by `python3 scripts/build.py`. The built file is committed
 because QBasic, the Docker image and `nix run` all want one file; the tests fail
 when it is out of date. The desktop starts one Hello instance at boot and shows
-an icon for each app. A click on an icon starts another instance (`AppLaunch`).
+a dock along the bottom of the screen with an icon for each app: it is on top of
+the windows, the icons near the pointer grow, and a click on an icon starts
+another instance (`AppLaunch`).
 
 An app module starts with a manifest line and holds its own procedures:
 
@@ -89,7 +91,7 @@ An app module starts with a manifest line and holds its own procedures:
 | Field | Meaning |
 | --- | --- |
 | `id` | app number, unique; the builder adds `CONST AppId<Name>` |
-| `name` | label of the desktop icon |
+| `name` | label of the dock icon |
 | `boot` | start one instance when the desktop starts |
 | `start` | `SUB` that makes an instance with `AppWindow` |
 | `event` | `SUB (win, ctl)` called for a control event of its windows |
