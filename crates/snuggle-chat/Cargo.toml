@@ -3,6 +3,7 @@ name = "snuggle-chat"
 description = "Chat for Snuggle OS: the protocol, the server, the host relay for the serial port, a test peer"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [lib]
