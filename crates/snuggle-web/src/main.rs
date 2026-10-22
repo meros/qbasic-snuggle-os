@@ -21,12 +21,13 @@
 //! LEAVE). --chat-listen also opens the plain TCP protocol (docs/CHAT.md), so
 //! a native relay and a browser can share one hub.
 
-use snuggle_chat::{clean_line, Hub, MAX_LINE};
+use snuggle_chat::{Hub, MAX_LINE, clean_line};
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -39,6 +40,29 @@ const MAX_BODY: usize = 4096;
 const MAX_SESSIONS_PER_PEER: usize = 20;
 const MAX_HEADERS: usize = 64;
 const REQUEST_TIME: Duration = Duration::from_secs(15);
+/// Open HTTP connections at once (a thread each); more are turned away with 503.
+const MAX_CONNECTIONS: usize = 256;
+/// Lines one session may send to the hub per RATE_WINDOW.
+const MAX_LINES_PER_WINDOW: u32 = 100;
+const RATE_WINDOW: Duration = Duration::from_secs(10);
+/// After SIGTERM: how long running requests get before the process exits.
+const DRAIN: Duration = Duration::from_secs(5);
+
+/// Sent with every response. The CSP lets the page run js-dos (WebAssembly,
+/// a worker or blob for the emulator's files) and nothing from other origins.
+/// js-dos 6 starts the emulator with eval(), so 'unsafe-eval' is needed; inline
+/// scripts and other origins stay blocked.
+const SECURITY_HEADERS: &str = "X-Content-Type-Options: nosniff\r\n\
+Referrer-Policy: no-referrer\r\n\
+Cross-Origin-Opener-Policy: same-origin\r\n\
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()\r\n\
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; \
+style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; \
+worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; \
+frame-ancestors 'none'\r\n";
+
+static STOP: AtomicBool = AtomicBool::new(false);
+static OPEN: AtomicUsize = AtomicUsize::new(0);
 
 struct Session {
     hub_id: u64,
@@ -47,6 +71,24 @@ struct Session {
     /// the number of lines dropped from the front of `log` so far
     base: usize,
     seen: Instant,
+    /// start of the current rate window, and the lines sent in it
+    window: Instant,
+    sent: u32,
+}
+
+impl Session {
+    /// Counts `n` lines against the window; false when the session sends too much.
+    fn allow(&mut self, n: u32) -> bool {
+        if self.window.elapsed() >= RATE_WINDOW {
+            self.window = Instant::now();
+            self.sent = 0;
+        }
+        if self.sent.saturating_add(n) > MAX_LINES_PER_WINDOW {
+            return false;
+        }
+        self.sent += n;
+        true
+    }
 }
 
 struct State {
@@ -79,6 +121,8 @@ fn session(state: &Arc<State>, sid: &str, peer: &str) -> Option<Arc<Mutex<Sessio
         log: VecDeque::new(),
         base: 0,
         seen: Instant::now(),
+        window: Instant::now(),
+        sent: 0,
     }));
     let sink = s.clone();
     // ends when the hub drops the sender (disconnect)
@@ -125,6 +169,8 @@ struct Request {
     body: Vec<u8>,
     /// the last address of X-Forwarded-For (the one the front end added), if any
     forwarded: Option<String>,
+    host: Option<String>,
+    origin: Option<String>,
 }
 
 fn read_request(stream: &TcpStream) -> Option<Request> {
@@ -136,6 +182,7 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
     let target = it.next()?.to_string();
     let mut len = 0usize;
     let mut forwarded = None;
+    let (mut host, mut origin) = (None, None);
     let started = Instant::now();
     for _ in 0..=MAX_HEADERS {
         if started.elapsed() > REQUEST_TIME {
@@ -152,6 +199,10 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
                 len = v.trim().parse().ok()?;
             } else if k.eq_ignore_ascii_case("x-forwarded-for") {
                 forwarded = v.rsplit(',').next().map(|s| s.trim().to_string());
+            } else if k.eq_ignore_ascii_case("host") {
+                host = Some(v.trim().to_string());
+            } else if k.eq_ignore_ascii_case("origin") {
+                origin = Some(v.trim().to_string());
             }
         }
     }
@@ -170,15 +221,18 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
         query,
         body,
         forwarded,
+        host,
+        origin,
     })
 }
 
 fn respond(mut s: &TcpStream, code: &str, ctype: &str, body: &[u8]) {
     let head = format!(
-        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\n{}Connection: close\r\n\r\n",
         code,
         ctype,
-        body.len()
+        body.len(),
+        SECURITY_HEADERS
     );
     let _ = s.write_all(head.as_bytes());
     let _ = s.write_all(body);
@@ -214,6 +268,19 @@ fn resolve(root: &Path, url: &str) -> Option<PathBuf> {
     Some(p)
 }
 
+/// A browser sends Origin on a cross-site POST. It must name this host, or the
+/// request is another site's page talking to our chat on a visitor's behalf.
+/// No Origin (curl, a native client) passes: it is not a browser request.
+fn same_origin(origin: Option<&str>, host: Option<&str>) -> bool {
+    match (origin, host) {
+        (None, _) => true,
+        (Some(o), Some(h)) => o
+            .split_once("://")
+            .is_some_and(|(_, rest)| rest.eq_ignore_ascii_case(h)),
+        (Some(_), None) => false,
+    }
+}
+
 fn param(query: &str, name: &str) -> u64 {
     query
         .split('&')
@@ -234,6 +301,9 @@ fn api(state: &Arc<State>, stream: &TcpStream, req: &Request) {
     ) {
         return respond(stream, "405 Method Not Allowed", "text/plain", b"no\n");
     }
+    if req.method == "POST" && !same_origin(req.origin.as_deref(), req.host.as_deref()) {
+        return respond(stream, "403 Forbidden", "text/plain", b"cross-origin\n");
+    }
     let peer = match &req.forwarded {
         Some(f) => f.clone(),
         None => stream
@@ -250,6 +320,19 @@ fn api(state: &Arc<State>, stream: &TcpStream, req: &Request) {
         ("POST", "send") => {
             let id = s.lock().unwrap().hub_id;
             let text = String::from_utf8_lossy(&req.body).to_string();
+            let n = text
+                .split('\n')
+                .take(20)
+                .filter(|l| !l.trim().is_empty())
+                .count();
+            if !s.lock().unwrap().allow(n as u32) {
+                return respond(
+                    stream,
+                    "429 Too Many Requests",
+                    "text/plain",
+                    b"slow down\n",
+                );
+            }
             for raw in text.split('\n').take(20) {
                 let line = clean_line(raw);
                 if !line.is_empty() && line.len() <= MAX_LINE {
@@ -290,6 +373,10 @@ fn handle(state: Arc<State>, root: PathBuf, stream: TcpStream) {
         Some(r) => r,
         None => return respond(&stream, "400 Bad Request", "text/plain", b"bad request\n"),
     };
+    // Cloud Run reserves paths that end in z, so not /healthz
+    if req.path == "/health" {
+        return respond(&stream, "200 OK", "text/plain", b"ok\n");
+    }
     if req.path.starts_with("/api/") {
         return api(&state, &stream, &req);
     }
@@ -372,11 +459,56 @@ fn main() {
         listener.local_addr().unwrap(),
         root.display()
     );
-    for stream in listener.incoming().flatten() {
+    install_sigterm();
+    listener
+        .set_nonblocking(true)
+        .expect("cannot make the listener non-blocking");
+    while !STOP.load(Ordering::SeqCst) {
+        let stream = match listener.accept() {
+            Ok((s, _)) => s,
+            Err(_) => {
+                thread::sleep(Duration::from_millis(20));
+                continue;
+            }
+        };
+        let _ = stream.set_nonblocking(false);
+        if OPEN.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+            OPEN.fetch_sub(1, Ordering::SeqCst);
+            respond(&stream, "503 Service Unavailable", "text/plain", b"busy\n");
+            continue;
+        }
         let (state, root) = (state.clone(), root.clone());
-        thread::spawn(move || handle(state, root, stream));
+        thread::spawn(move || {
+            handle(state, root, stream);
+            OPEN.fetch_sub(1, Ordering::SeqCst);
+        });
+    }
+    // SIGTERM: no new connections; let the running requests finish
+    eprintln!("snuggle-web: stopping");
+    let until = Instant::now() + DRAIN;
+    while OPEN.load(Ordering::SeqCst) > 0 && Instant::now() < until {
+        thread::sleep(Duration::from_millis(50));
     }
 }
+
+extern "C" fn on_sigterm(_: i32) {
+    STOP.store(true, Ordering::SeqCst);
+}
+
+#[cfg(unix)]
+fn install_sigterm() {
+    unsafe extern "C" {
+        fn signal(signum: i32, handler: extern "C" fn(i32)) -> usize;
+    }
+    // SIGINT 2, SIGTERM 15. The handler only sets an atomic flag.
+    unsafe {
+        signal(15, on_sigterm);
+        signal(2, on_sigterm);
+    }
+}
+
+#[cfg(not(unix))]
+fn install_sigterm() {}
 
 #[cfg(test)]
 mod tests {
@@ -414,6 +546,58 @@ mod tests {
         assert!(session(&state, "other", "10.0.0.3").is_some());
         // a session that exists stays reachable
         assert!(session(&state, "s0", "10.0.0.2").is_some());
+    }
+
+    #[test]
+    fn only_same_origin_posts_pass() {
+        assert!(same_origin(None, Some("snuggle.meros.vip")));
+        assert!(same_origin(
+            Some("https://snuggle.meros.vip"),
+            Some("snuggle.meros.vip")
+        ));
+        assert!(same_origin(
+            Some("http://127.0.0.1:8080"),
+            Some("127.0.0.1:8080")
+        ));
+        assert!(!same_origin(
+            Some("https://evil.example"),
+            Some("snuggle.meros.vip")
+        ));
+        assert!(!same_origin(
+            Some("https://snuggle.meros.vip.evil.example"),
+            Some("snuggle.meros.vip")
+        ));
+        assert!(!same_origin(Some("null"), Some("snuggle.meros.vip")));
+        assert!(!same_origin(Some("https://snuggle.meros.vip"), None));
+    }
+
+    #[test]
+    fn a_session_cannot_flood_the_hub() {
+        let state = Arc::new(State {
+            hub: Mutex::new(Hub::new()),
+            sessions: Mutex::new(BTreeMap::new()),
+        });
+        let a = session(&state, "aaa", "10.0.0.1").unwrap();
+        let mut s = a.lock().unwrap();
+        assert!(s.allow(MAX_LINES_PER_WINDOW));
+        assert!(!s.allow(1));
+        s.window = Instant::now() - RATE_WINDOW;
+        assert!(s.allow(1));
+    }
+
+    #[test]
+    fn responses_carry_security_headers() {
+        for h in [
+            "X-Content-Type-Options: nosniff",
+            "Referrer-Policy: no-referrer",
+            "frame-ancestors 'none'",
+            "object-src 'none'",
+        ] {
+            assert!(SECURITY_HEADERS.contains(h), "{}", h);
+        }
+        // every header line ends in CRLF, and the block adds no blank line
+        assert!(SECURITY_HEADERS.ends_with("\r\n"));
+        assert!(!SECURITY_HEADERS.contains("\r\n\r\n"));
     }
 
     #[test]
