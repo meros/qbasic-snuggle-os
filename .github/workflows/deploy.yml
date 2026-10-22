@@ -1,10 +1,10 @@
 name: Deploy
 
 # The page (original and modern Snuggle OS, with the chat server) as a container
-# on Cloud Run.
-#   pull request                    build the image only
-#   push to master, or run by hand  build, push, terraform apply
-# The push and apply steps need the secrets of the original repository.
+# on Cloud Run, project meros-apps.
+#   pull request                    check and build the image only
+#   push to master, or run by hand  check, then build, push and deploy
+# The service, its deploy account and the keyless login are defined in meros/hosting.
 on:
   pull_request:
   push:
@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  image:
+  check:
     name: Check and build the image
     runs-on: ubuntu-latest
     steps:
@@ -31,49 +31,16 @@ jobs:
       - name: Check
         run: nix flake check --print-build-logs
       - name: Build the image
-        run: nix build .#web-image --out-link image.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: image
-          path: image.tar.gz
-          retention-days: 3
+        run: nix build .#web-image --no-link
 
   deploy:
-    name: Push and deploy
-    needs: image
+    needs: check
     if: github.repository == 'meros/qbasic-snuggle-os' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: image
-      - uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.RUN_SA_KEY }}
-      - uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.RUN_PROJECT }}
-      - name: Push the image
-        run: |
-          gcloud auth configure-docker --quiet
-          docker load < image.tar.gz
-          docker tag snuggleos:latest "gcr.io/${{ secrets.RUN_PROJECT }}/snuggleos:${GITHUB_SHA}"
-          docker push "gcr.io/${{ secrets.RUN_PROJECT }}/snuggleos:${GITHUB_SHA}"
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.8
-      - name: Deploy
-        working-directory: terraform
-        run: |
-          terraform init
-          terraform workspace select "${GITHUB_REF_NAME}" || terraform workspace new "${GITHUB_REF_NAME}"
-          # The state of the 2020 deploys (Terraform 0.12) names the provider
-          # registry.terraform.io/-/google. This moves it to hashicorp/google;
-          # it does nothing when the state is already current.
-          terraform state replace-provider -auto-approve \
-            registry.terraform.io/-/google registry.terraform.io/hashicorp/google || true
-          terraform apply -auto-approve
-        env:
-          TF_VAR_git_sha: ${{ github.sha }}
-          TF_VAR_project_id: ${{ secrets.RUN_PROJECT }}
+    uses: meros/deploy-workflows/.github/workflows/deploy-cloud-run.yml@main
+    with:
+      app: snuggleos
+      nix_attr: .#web-image
+      nix_image: snuggleos:latest
+    permissions:
+      contents: read
+      id-token: write
