@@ -3,6 +3,7 @@ name = "snuggle-tools"
 description = "Builds the Snuggle OS program from its parts, generates its API reference, and runs its tests in headless DOSBox"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [[bin]]

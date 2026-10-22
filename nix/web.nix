@@ -4,7 +4,7 @@
 #
 #   site    the static files: the page, js-dos, and one bundle per variant
 #   run     snuggle-web with the site, listening on $PORT or 127.0.0.1:8080
-#   image   the same as a container image (Cloud Run, terraform/)
+#   image   the same as a container image (Cloud Run, see .github/workflows/deploy.yml)
 { lib, stdenv, fetchurl, runCommand, writeText, writeShellScript, zip, dockerTools, tools, program, qbasic }:
 let
   # js-dos 6.22, the WebAssembly DOSBox. Fetched from the npm registry.

@@ -2,6 +2,7 @@
 
 ```
 nix flake check             # unit tests and docs (DOSBox does not run in the Nix sandbox)
+                            # CI runs this; the QBasic groups below are not in CI
 nix run .#test              # everything, in the current directory
 snuggle test window heap    # some groups (in nix develop, after cargo build)
 snuggle groups              # the groups and the apps each has

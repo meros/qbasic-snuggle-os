@@ -38,7 +38,7 @@ rec {
   # The QBasic groups as derivations. DOSBox 0.74 segfaults at its first frame
   # in the Nix build sandbox (SDL_UpdateRects), so they are not in `checks`;
   # `nix run .#test` runs them outside the sandbox.
-  // lib.optionalAttrs pkgs.stdenv.isLinux (lib.genAttrs (map (g: "test-${g}") (groups ++ [ "smoke" ])) (n: testGroup (lib.removePrefix "test-" n)));
+  // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (lib.genAttrs (map (g: "test-${g}") (groups ++ [ "smoke" ])) (n: testGroup (lib.removePrefix "test-" n)));
 
   apps =
     let
@@ -68,7 +68,7 @@ rec {
       };
     };
 
-  checks = lib.optionalAttrs pkgs.stdenv.isLinux (
+  checks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
     {
       inherit tools; # its checkPhase is `cargo test` of the whole workspace
       program = program;
