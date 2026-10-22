@@ -4,7 +4,7 @@ A small windowed desktop for **QBasic 1.1**, run in **DOSBox**. It began as a
 1999 hobby program; this tree is a rebuild of it as a system with a kernel, apps,
 an API, a test suite and a chat service, all built with **Nix**.
 
-Live at https://snuggleos-vtmxwzy3uq-lz.a.run.app (type `SNUGGLE` for this
+Live at https://snuggle.meros.vip (type `SNUGGLE` for this
 version, `ORIGINAL` for the 1999 code base).
 
 ```
@@ -30,7 +30,7 @@ Rust server over the serial port).
 | `crates/snuggle-web/` | The web host: static files, the chat hub, the chat calls of the page | Rust |
 | `web/` | The DOS-style page that starts the original or the modern version in js-dos | JS |
 | `vendor/original/` | The code base before the rewrite, for the page's `ORIGINAL` | QBasic |
-| `terraform/` | Cloud Run for the container image of the page | HCL |
+| `.github/workflows/deploy.yml` | Check, then build and deploy the image to Cloud Run (the deploy job is the shared meros/deploy-workflows) | YAML |
 | `crates/snuggle-chat/` | The chat protocol, server, host relay and a test peer | Rust |
 | `tests/qbasic/` | The QBasic side of the tests: cases, the reference drawing code, the counting drawing layer, a scripted mouse | QBasic |
 | `nix/`, `flake.nix` | Packages, apps, checks, dev shell | Nix |
